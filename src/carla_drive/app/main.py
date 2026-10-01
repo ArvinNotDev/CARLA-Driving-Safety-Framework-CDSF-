@@ -141,6 +141,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             next_tick_at = time.monotonic() + step_seconds
         if "reset" in control.pressed:
             session.reset_ego()
+            sensors.clear_rear()
             reverse = False
             status = "Vehicle reset to its starting position"
             status_until = time.monotonic() + 2.5

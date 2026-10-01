@@ -31,6 +31,7 @@ class MonitorSensors:
         self._lidar_received_at = 0.0
         self._rear_lock = threading.Lock()
         self._rear_distances: dict[str, tuple[float, float]] = {}
+        self._rear_minimum_frame = 0
         self._create_mirror()
         if config.lidar.enabled:
             self._create_lidar()
@@ -124,7 +125,16 @@ class MonitorSensors:
         if distance > self.config.rear_parking.distance_m:
             return
         with self._rear_lock:
+            if event.frame < self._rear_minimum_frame:
+                return
             self._rear_distances[zone] = (distance, time.monotonic())
+
+    def clear_rear(self) -> None:
+        """Forget obstacles at the previous vehicle position after a reset."""
+        frame = self.session.world.get_snapshot().frame + 1
+        with self._rear_lock:
+            self._rear_minimum_frame = frame
+            self._rear_distances.clear()
 
     def _create_collision_observer(self) -> None:
         sensor = self._spawn_sensor("sensor.other.collision", carla.Transform(carla.Location(z=0.8)))
