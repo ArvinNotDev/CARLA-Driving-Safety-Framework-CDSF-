@@ -16,6 +16,8 @@ LOG = logging.getLogger(__name__)
 
 def normalize_steering(raw: float, deadzone: float, response: float) -> float:
     """Apply a centered deadzone and response curve while preserving sign."""
+    if not math.isfinite(raw):
+        return 0.0
     value = max(-1.0, min(1.0, float(raw)))
     magnitude = abs(value)
     if magnitude <= deadzone:
@@ -28,6 +30,8 @@ def normalize_trigger(raw: float, rest: float, full: float, deadzone: float, res
     """Normalize trigger travel from a calibrated resting value to full press."""
     if full == rest:
         raise ValueError("Trigger full and resting values must differ.")
+    if not math.isfinite(raw):
+        return 0.0
     value = max(0.0, min(1.0, (float(raw) - rest) / (full - rest)))
     if value <= deadzone:
         return 0.0
@@ -51,16 +55,24 @@ class ControllerReader:
         self.joystick: pygame.joystick.JoystickType | None = None
         self._previous_buttons: dict[str, bool] = {}
         self._previous_steering = 0.0
+        self._mapping_warning = False
         self.keyboard_fallback = True
         pygame.joystick.init()
-        if pygame.joystick.get_count() > config.joystick_index:
-            joystick = pygame.joystick.Joystick(config.joystick_index)
-            joystick.init()
-            self.joystick = joystick
-            self.keyboard_fallback = False
-            LOG.info("Controller connected: %s (%d axes, %d buttons)", joystick.get_name(), joystick.get_numaxes(), joystick.get_numbuttons())
-        else:
+        self._connect()
+        if not self.joystick:
             LOG.warning("No configured gamepad detected; using keyboard controls.")
+
+    def _connect(self) -> None:
+        if self.joystick or pygame.joystick.get_count() <= self.config.joystick_index:
+            return
+        joystick = pygame.joystick.Joystick(self.config.joystick_index)
+        joystick.init()
+        self.joystick = joystick
+        self._mapping_warning = False
+        self._previous_buttons.clear()
+        self._previous_steering = 0.0
+        self.keyboard_fallback = False
+        LOG.info("Controller connected: %s (%d axes, %d buttons)", joystick.get_name(), joystick.get_numaxes(), joystick.get_numbuttons())
 
     @property
     def name(self) -> str:
@@ -86,12 +98,27 @@ class ControllerReader:
 
     def sample(self, events: Iterable[pygame.event.Event]) -> ControlInput:
         events = tuple(events)
+        for event in events:
+            if event.type == pygame.JOYDEVICEREMOVED and self.joystick and event.instance_id == self.joystick.get_instance_id():
+                self._disconnect()
+            elif event.type == pygame.JOYDEVICEADDED:
+                self._connect()
         if self.joystick:
             try:
                 if self.joystick.get_init():
+                    required = max(self.config.steering_axis, self.config.throttle_axis, self.config.brake_axis)
+                    if required >= self.joystick.get_numaxes():
+                        if not self._mapping_warning:
+                            LOG.warning("Controller has %d axes, but axis %d is configured. Using keyboard; inspect --controller-debug and edit the YAML mapping.", self.joystick.get_numaxes(), required)
+                            self._mapping_warning = True
+                        self.keyboard_fallback = True
+                        return self._sample_keyboard(events)
+                    self.keyboard_fallback = False
                     return self._sample_joystick()
             except pygame.error:
                 self._disconnect()
+        if self.joystick:
+            self._disconnect()
         return self._sample_keyboard(events)
 
     def _disconnect(self) -> None:
@@ -103,11 +130,13 @@ class ControllerReader:
                 pass
             self.joystick = None
             self.keyboard_fallback = True
+            self._previous_buttons.clear()
+            self._previous_steering = 0.0
 
     def _sample_joystick(self) -> ControlInput:
         assert self.joystick is not None
-        axes = self.raw_axes()
-        steering_raw = self._axis(axes, self.config.steering_axis)
+        axes = [self.joystick.get_axis(index) for index in range(self.joystick.get_numaxes())]
+        steering_raw = axes[self.config.steering_axis]
         if self.config.steering_axis_inverted:
             steering_raw = -steering_raw
         steering = normalize_steering(steering_raw, self.config.steering_deadzone, self.config.steering_response)
@@ -116,18 +145,14 @@ class ControllerReader:
         self._previous_steering = steering
 
         kwargs = dict(rest=self.config.trigger_rest_value, full=self.config.trigger_full_value, deadzone=self.config.trigger_deadzone)
-        throttle_raw = self._axis(axes, self.config.throttle_axis, self.config.trigger_rest_value)
-        brake_raw = self._axis(axes, self.config.brake_axis, self.config.trigger_rest_value)
+        throttle_raw = axes[self.config.throttle_axis]
+        brake_raw = axes[self.config.brake_axis]
         throttle = normalize_trigger(throttle_raw, response=self.config.throttle_response, **kwargs)
         brake = normalize_trigger(brake_raw, response=self.config.brake_response, **kwargs)
         current = {action: self._button(getattr(self.config, field)) for action, field in self.ACTION_BUTTONS.items()}
         pressed = frozenset(action for action, down in current.items() if down and not self._previous_buttons.get(action, False))
         self._previous_buttons = current
         return ControlInput(steering, throttle, brake, current["handbrake"], pressed)
-
-    @staticmethod
-    def _axis(axes: list[float], index: int, default: float = 0.0) -> float:
-        return axes[index] if 0 <= index < len(axes) else default
 
     def _button(self, index: int) -> bool:
         return 0 <= index < self.joystick.get_numbuttons() and bool(self.joystick.get_button(index))
