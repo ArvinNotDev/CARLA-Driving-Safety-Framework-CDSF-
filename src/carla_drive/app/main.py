@@ -47,7 +47,17 @@ def run_application(config: AppConfig) -> int:
     controller: ControllerReader | None = None
     audio: ParkingBeep | None = None
     try:
+        _show_startup_status(
+            screen,
+            "CONNECTING TO CARLA",
+            f"{config.carla.host}:{config.carla.port}  /  CARLA 0.9.16",
+        )
         session = CarlaSession(config)
+        _show_startup_status(
+            screen,
+            "CHECKING AVAILABLE CONTENT",
+            "Discovering installed Town maps, weather, and vehicles.",
+        )
         maps = session.available_maps()
         vehicles = session.available_vehicles()
         weather = discover_weather_presets()
@@ -100,6 +110,19 @@ def run_application(config: AppConfig) -> int:
         if session:
             session.close()
         pygame.quit()
+
+
+def _show_startup_status(screen: pygame.Surface, title: str, detail: str) -> None:
+    width, height = screen.get_size()
+    screen.fill((7, 15, 25))
+    pygame.draw.rect(screen, (77, 208, 190), (0, 0, width, 3))
+    title_font = pygame.font.SysFont("Segoe UI", 27, bold=True)
+    detail_font = pygame.font.SysFont("Segoe UI", 16)
+    title_surface = title_font.render(title, True, (237, 245, 248))
+    detail_surface = detail_font.render(detail, True, (136, 160, 173))
+    screen.blit(title_surface, title_surface.get_rect(center=(width // 2, height // 2 - 15)))
+    screen.blit(detail_surface, detail_surface.get_rect(center=(width // 2, height // 2 + 23)))
+    pygame.display.flip()
 
 
 def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> None:

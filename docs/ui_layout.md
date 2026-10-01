@@ -2,6 +2,10 @@
 
 The UI contract is more important than the exact artwork. Agents may improve the visual style while preserving placement and hierarchy.
 
+## Session setup screen
+
+Show a clear connection and content-discovery state before setup. Read the available Town maps from CARLA before opening the map dropdown, and show the number of available maps. Keep environment and vehicle choices in dropdowns, use direct increment/decrement controls for traffic counts, and show a compact session summary beside the settings. Include a working link to the project GitHub page.
+
 ## Screen hierarchy
 
 1. Main driving camera — dominant area.

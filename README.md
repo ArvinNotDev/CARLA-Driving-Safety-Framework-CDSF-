@@ -17,7 +17,7 @@ Install the test extra when developing: `python -m pip install -e ".[test]"`, th
 
 The CARLA Python API is supplied by the matching CARLA installation and is intentionally not downloaded as a generic PyPI dependency. If the app cannot connect, check that the server is running and that `carla.host`, `carla.port`, and `carla.timeout_seconds` match it.
 
-The setup screen discovers maps and four-wheel vehicles from the connected server. It starts with zero NPCs; use the arrow keys to select a setting, left/right to change it, then press Enter or click **Start Driving**.
+The setup screen scans installed Town maps and four-wheel vehicles before opening. It starts with zero NPCs and shows map, weather, and vehicle choices in dropdowns. Click a dropdown to choose an item; for keyboard use, move with Up/Down, adjust with Left/Right, and press Space to open a dropdown. Press Enter or click **Start Driving** to begin. The GitHub button opens [@ArvinNotDev](https://github.com/ArvinNotDev/).
 
 For an API/controller check without spawning vehicles:
 
