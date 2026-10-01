@@ -19,6 +19,7 @@ class Dashboard:
         self.config = config
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
+        self.lidar_small = pygame.font.Font(None, 14)
         self.speed_font = pygame.font.Font(None, 62)
         self.gear_font = pygame.font.Font(None, 40)
         self._main_key: float | None = None
@@ -110,41 +111,113 @@ class Dashboard:
         points, timestamp = frame
         if timestamp <= 0.0 or (not paused and time.monotonic() - timestamp > 1.5):
             points = None
-        panel_width, panel_height = 240, 200
+        panel_width, panel_height = 320, 310
         x, y = width - panel_width - 20, 20
         panel = pygame.Rect(x, y, panel_width, panel_height)
         pygame.draw.rect(self.screen, (7, 17, 27), panel, border_radius=12)
         pygame.draw.rect(self.screen, (64, 91, 108), panel, width=1, border_radius=12)
-        self._text("360°  LIDAR", (x + 14, y + 10), self.font, (198, 223, 232))
-        canvas_rect = pygame.Rect(x + 12, y + 38, panel_width - 24, panel_height - 50)
+        self._text("360°  LIDAR", (x + 14, y + 9), self.font, (225, 239, 243))
+        self._text(
+            f"HEIGHT COLOR  /  TOP VIEW  /  {self.config.lidar.display_range_m:.0f} M",
+            (x + 14, y + 31),
+            self.lidar_small,
+            (132, 163, 177),
+        )
+        if not self.config.lidar.enabled:
+            state, state_color = "OFF", (145, 159, 167)
+        elif points is None:
+            state, state_color = "NO DATA", (237, 168, 112)
+        elif paused:
+            state, state_color = "HOLD", (246, 194, 107)
+        else:
+            state, state_color = "LIVE", (87, 214, 163)
+        state_rect = pygame.Rect(panel.right - 77, y + 10, 63, 23)
+        pygame.draw.rect(self.screen, (22, 49, 48), state_rect, border_radius=8)
+        self._text(state, state_rect.center, self.lidar_small, state_color, centered=True)
+
+        canvas_rect = pygame.Rect(x + 12, y + 54, panel_width - 24, 220)
         if self._lidar_key != (timestamp if points is not None else 0.0):
             self._lidar_surface = self._build_lidar_surface(canvas_rect.size, points)
             self._lidar_key = timestamp if points is not None else 0.0
         if self._lidar_surface:
             self.screen.blit(self._lidar_surface, canvas_rect)
         if points is None:
-            self._text("NO SIGNAL", canvas_rect.center, self.small, (117, 145, 157), centered=True)
+            message = "SENSOR DISABLED" if not self.config.lidar.enabled else "WAITING FOR RETURNS"
+            self._text(message, canvas_rect.center, self.lidar_small, (145, 168, 178), centered=True)
+
+        legend_y = y + 288
+        legend = (("LOW", (90, 166, 255)), ("MID", (76, 227, 191)), ("HIGH", (255, 174, 90)))
+        for index, (label, color) in enumerate(legend):
+            legend_x = x + 16 + index * 89
+            pygame.draw.circle(self.screen, color, (legend_x + 4, legend_y + 6), 3)
+            self._text(label, (legend_x + 12, legend_y), self.lidar_small, (157, 181, 191))
 
     def _build_lidar_surface(self, size: tuple[int, int], points: np.ndarray | None) -> pygame.Surface:
         surface = pygame.Surface(size, pygame.SRCALPHA)
         surface.fill((5, 13, 21, 235))
         center = (size[0] // 2, size[1] // 2)
-        radius = min(size) * 0.44
-        for fraction in (0.33, 0.66, 1.0):
-            pygame.draw.circle(surface, (41, 67, 82), center, int(radius * fraction), 1)
-        pygame.draw.line(surface, (47, 69, 81), (center[0], 4), (center[0], size[1] - 4), 1)
-        pygame.draw.line(surface, (47, 69, 81), (4, center[1]), (size[0] - 4, center[1]), 1)
+        radius = int(min(size) * 0.45)
+        view_range = self.config.lidar.display_range_m
+        for fraction in (0.25, 0.5, 0.75, 1.0):
+            ring_radius = int(radius * fraction)
+            pygame.draw.circle(surface, (40, 67, 82), center, ring_radius, 1)
+            if fraction < 1.0:
+                distance_label = f"{view_range * fraction:.0f}m"
+                label = self.lidar_small.render(distance_label, True, (108, 137, 151))
+                label_x = center[0] + int(ring_radius * 0.62) + 2
+                label_y = center[1] - int(ring_radius * 0.72) - label.get_height() // 2
+                label_back = pygame.Rect(label_x - 2, label_y - 1, label.get_width() + 4, label.get_height() + 2)
+                pygame.draw.rect(surface, (5, 13, 21), label_back, border_radius=3)
+                surface.blit(label, (label_x, label_y))
+        pygame.draw.line(surface, (45, 71, 87), (center[0], center[1] - radius), (center[0], center[1] + radius), 1)
+        pygame.draw.line(surface, (45, 71, 87), (center[0] - radius, center[1]), (center[0] + radius, center[1]), 1)
+        for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+            start = (center[0] + int(dx * radius * 0.93), center[1] + int(dy * radius * 0.93))
+            end = (center[0] + int(dx * radius), center[1] + int(dy * radius))
+            pygame.draw.line(surface, (89, 126, 142), start, end, 2)
+
         if points is not None and len(points):
-            scale = radius / self.config.lidar.range_m
+            scale = radius / view_range
             for point in points:
                 forward, lateral = float(point[0]), float(point[1])
+                distance = math.hypot(forward, lateral)
+                if distance > view_range:
+                    continue
                 px = int(center[0] + lateral * scale)
                 py = int(center[1] - forward * scale)
-                if 1 <= px < size[0] - 1 and 1 <= py < size[1] - 1:
-                    distance = math.hypot(forward, lateral)
-                    intensity = max(70, 225 - int(distance * 2.5))
-                    pygame.draw.circle(surface, (74, intensity, 188), (px, py), 2)
-        pygame.draw.rect(surface, (81, 208, 193), (center[0] - 4, center[1] - 6, 8, 12), border_radius=2)
+                if not (1 <= px < size[0] - 1 and 1 <= py < size[1] - 1):
+                    continue
+
+                height = float(point[2])
+                if height < -1.2:
+                    base_color = (90, 166, 255)
+                elif height < 0.4:
+                    base_color = (76, 227, 191)
+                else:
+                    base_color = (255, 174, 90)
+                brightness = 0.72 + 0.28 * (1.0 - distance / view_range)
+                color = tuple(int(channel * brightness) for channel in base_color)
+                point_radius = 3 if distance < 7.0 else 2 if distance < 17.0 else 1
+                pygame.draw.circle(surface, color, (px, py), point_radius)
+
+        for label, position in (
+            ("F", (center[0] - 3, 1)),
+            ("B", (center[0] - 3, size[1] - self.lidar_small.get_height() - 1)),
+            ("L", (1, center[1] - self.lidar_small.get_height() // 2)),
+            ("R", (size[0] - self.lidar_small.size("R")[0] - 1, center[1] - self.lidar_small.get_height() // 2)),
+        ):
+            surface.blit(self.lidar_small.render(label, True, (124, 153, 167)), position)
+
+        vehicle = [
+            (center[0], center[1] - 9),
+            (center[0] + 5, center[1] - 3),
+            (center[0] + 5, center[1] + 8),
+            (center[0] - 5, center[1] + 8),
+            (center[0] - 5, center[1] - 3),
+        ]
+        pygame.draw.polygon(surface, (6, 20, 29), vehicle)
+        pygame.draw.polygon(surface, (221, 242, 240), vehicle, 1)
+        pygame.draw.line(surface, (221, 242, 240), (center[0] - 2, center[1] + 1), (center[0] + 2, center[1] + 1), 1)
         return surface
 
     def _draw_parking_bar(self, width: int, snapshot: DrivingSnapshot) -> None:

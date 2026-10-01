@@ -46,7 +46,8 @@ camera:
 lidar:
   enabled: true
   channels: 32
-  range_m: 45.0
+  range_m: 45.0 # Physical sensor range.
+  display_range_m: 32.0 # Top-down zoom range; does not shorten the sensor range.
   points_per_second: 120000
   rotation_frequency_hz: 20.0
   display_points: 3000

@@ -41,7 +41,7 @@ Distance state should be understandable without reading text.
 
 ## LiDAR
 
-Use a dark, compact panel that emphasizes the point cloud and leaves enough contrast for UI labels.
+Use a dark panel that emphasizes the point cloud and leaves enough contrast for UI labels. Keep the view range independently tunable from the physical sensor range. Show distance rings, vehicle heading, and a small height-color legend so nearby returns are easier to separate.
 
 Prefer top-down 2D projection for Phase 1 so 360 coverage is immediately understandable.
 

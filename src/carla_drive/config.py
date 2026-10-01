@@ -66,6 +66,7 @@ class LidarConfig:
     enabled: bool = True
     channels: int = 32
     range_m: float = 45.0
+    display_range_m: float = 32.0
     points_per_second: int = 120_000
     rotation_frequency_hz: float = 20.0
     display_points: int = 3_000
@@ -219,3 +220,5 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Enabled LiDAR must use positive channels and point counts.")
     if config.lidar.enabled and config.lidar.range_m <= 0:
         raise ValueError("Enabled LiDAR range_m must be positive.")
+    if config.lidar.enabled and not 0 < config.lidar.display_range_m <= config.lidar.range_m:
+        raise ValueError("Enabled LiDAR display_range_m must be positive and no greater than range_m.")
