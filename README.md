@@ -25,6 +25,7 @@ carla-drive --config config/defaults.example.yaml --controller-debug
 ```
 
 Built-in defaults work from an installed package. To tune the runtime, copy `config/defaults.example.yaml` to a local YAML file and launch with `carla-drive --config path/to/your.yaml`.
+The current fixed layout supports windows of at least 1024×700 pixels; invalid smaller sizes are rejected during configuration loading.
 
 ### Controls
 

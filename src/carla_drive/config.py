@@ -179,14 +179,16 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("CARLA timeout_seconds must be positive.")
     if config.carla.synchronous_mode and not 0 < config.carla.fixed_delta_seconds <= 0.1:
         raise ValueError("Synchronous fixed_delta_seconds must be greater than 0 and at most 0.1.")
-    if min(config.window.width, config.window.height, config.window.render_fps) <= 0:
-        raise ValueError("Window dimensions and render_fps must be positive.")
+    if config.window.width < 1024 or config.window.height < 700 or config.window.render_fps <= 0:
+        raise ValueError("The dashboard requires at least a 1024x700 window and a positive render_fps.")
     if min(config.camera.width, config.camera.height, config.camera.mirror_width, config.camera.mirror_height) <= 0:
         raise ValueError("Camera resolutions must be positive.")
     if not 30.0 <= config.camera.fov <= 150.0:
         raise ValueError("Camera fov must be between 30 and 150 degrees.")
     if min(config.session.traffic_vehicles, config.session.pedestrians) < 0:
         raise ValueError("Traffic and pedestrian counts cannot be negative.")
+    if max(config.session.traffic_vehicles, config.session.pedestrians) > 200:
+        raise ValueError("Traffic and pedestrian counts cannot exceed 200 in the launcher.")
     controller = config.controller
     if not 0 <= controller.steering_deadzone < 1 or not 0 <= controller.trigger_deadzone < 1:
         raise ValueError("Controller deadzones must be in the range [0, 1).")

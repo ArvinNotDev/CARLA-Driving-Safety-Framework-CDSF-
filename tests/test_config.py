@@ -34,3 +34,10 @@ def test_entry_point_uses_builtin_defaults_without_repository_config(monkeypatch
     monkeypatch.setattr(app_main, "run_application", lambda config: observed.append(config) or 0)
     assert app_main.main([]) == 0
     assert observed[0].carla.port == 2000
+
+
+def test_launcher_rejects_window_that_cannot_fit_the_hud(tmp_path):
+    path = tmp_path / "small.yaml"
+    path.write_text("window:\n  width: 800\n  height: 600\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="1024x700"):
+        load_config(path)

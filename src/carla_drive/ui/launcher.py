@@ -15,7 +15,11 @@ class Launcher:
 
     def __init__(self, screen: pygame.Surface, maps: list[str], weather: list[tuple[str, str]], vehicles: list[VehicleOption], defaults: SessionConfig):
         self.screen = screen
-        self.maps = maps or ["Town01"]
+        if not maps:
+            raise ValueError("CARLA reported no maps. Check the server installation.")
+        if not weather or not vehicles:
+            raise ValueError("CARLA reported no usable weather or four-wheel vehicle choices.")
+        self.maps = maps
         self.weather = weather
         self.vehicles = vehicles
         self.defaults = defaults
@@ -112,7 +116,7 @@ class Launcher:
         self._text("SESSION SETUP", (59, 99), self.small, (101, 190, 205))
         self._text("Select your environment", (56, 145), self.font, (194, 210, 220))
 
-        panel = pygame.Rect(48, 192, min(770, width - 96), 400)
+        panel = pygame.Rect(48, 192, min(770, int(width * 0.60)), 400)
         pygame.draw.rect(self.screen, (15, 27, 41), panel, border_radius=18)
         pygame.draw.rect(self.screen, (36, 58, 75), panel, width=1, border_radius=18)
         values = [
@@ -132,7 +136,10 @@ class Launcher:
             if active:
                 pygame.draw.rect(self.screen, (66, 180, 193), row, width=2, border_radius=10)
             self._text(label, (row.x + 17, row.y + 7), self.small, (133, 163, 177))
-            self._text(value, (row.x + 17, row.y + 29), self.font, (235, 243, 247))
+            display_value = value
+            while self.font.size(display_value)[0] > row.w - 100 and len(display_value) > 1:
+                display_value = display_value[:-2].rstrip("…") + "…"
+            self._text(display_value, (row.x + 17, row.y + 29), self.font, (235, 243, 247))
             self._text("‹", (row.right - 54, row.y + 19), self.font, (101, 190, 205))
             self._text("›", (row.right - 27, row.y + 19), self.font, (101, 190, 205))
 
