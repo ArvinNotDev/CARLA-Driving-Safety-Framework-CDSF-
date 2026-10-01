@@ -68,6 +68,12 @@ def friendly_map_name(map_name: str) -> str:
     return map_name.rsplit("/", 1)[-1]
 
 
+def is_drivable_map(map_name: str) -> bool:
+    """Return whether a CARLA map name follows the packaged Town map convention."""
+    name = friendly_map_name(map_name)
+    return len(name) > 4 and name.startswith("Town") and name[4].isdigit()
+
+
 class CarlaSession:
     """Owns CARLA actors created by this application and restores runtime settings."""
 
@@ -101,10 +107,30 @@ class CarlaSession:
 
     def available_maps(self) -> list[str]:
         try:
-            return sorted(self.client.get_available_maps(), key=friendly_map_name)
+            maps = self.client.get_available_maps()
         except RuntimeError as exc:
             LOG.warning("CARLA map discovery failed: %s", exc)
-            return [self.world.get_map().name]
+            current_map = self.world.get_map().name
+            if is_drivable_map(current_map):
+                return [current_map]
+            raise RuntimeError("Could not discover any drivable CARLA Town maps.") from exc
+
+        current_map = self.world.get_map().name
+        current_name = friendly_map_name(current_map).casefold()
+        drivable_maps = sorted(
+            {map_name for map_name in maps if is_drivable_map(map_name)},
+            key=lambda map_name: (
+                friendly_map_name(map_name).casefold() != current_name,
+                friendly_map_name(map_name).casefold(),
+            ),
+        )
+        if drivable_maps:
+            return drivable_maps
+
+        current_map = self.world.get_map().name
+        if is_drivable_map(current_map):
+            return [current_map]
+        raise RuntimeError("CARLA reported no drivable Town maps; internal assets are not selectable.")
 
     def available_vehicles(self) -> list[VehicleOption]:
         return vehicle_options(self.world)
@@ -112,9 +138,20 @@ class CarlaSession:
     def prepare(self, map_name: str | None, weather_name: str, random_seed: int) -> None:
         if not hasattr(carla.WeatherParameters, weather_name):
             raise ValueError(f"CARLA weather preset '{weather_name}' is unavailable in this installation.")
+        if map_name and not is_drivable_map(map_name):
+            raise ValueError(
+                f"'{friendly_map_name(map_name)}' is not a drivable CARLA Town map. "
+                "Choose one of the Town maps in the setup screen."
+            )
         if map_name and friendly_map_name(map_name) != friendly_map_name(self.world.get_map().name):
             LOG.info("Loading map %s", friendly_map_name(map_name))
-            self.world = self.client.load_world(map_name)
+            try:
+                self.world = self.client.load_world(map_name)
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    f"CARLA could not load map '{friendly_map_name(map_name)}'. "
+                    "Confirm that this Town map is installed on the server."
+                ) from exc
             # Loading a map creates a new world with its own settings and weather.
             self.original_settings = self.world.get_settings()
             self.original_weather = self.world.get_weather()

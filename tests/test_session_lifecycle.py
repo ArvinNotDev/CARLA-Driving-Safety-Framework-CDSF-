@@ -55,3 +55,35 @@ def test_map_switch_restores_destination_world_settings_and_weather():
     assert selected.settings.fixed_delta_seconds is None
     assert selected.weather == "selected weather"
     assert previous.settings.synchronous_mode is True
+
+
+def test_available_maps_filters_internal_assets_and_prefers_current_map():
+    session = CarlaSession.__new__(CarlaSession)
+    session.world = World("/Game/Carla/Maps/Town10HD_Opt", "weather", False, None)
+    session.client = SimpleNamespace(
+        get_available_maps=lambda: [
+            "/Game/Carla/Maps/AnnotationColorLandscape",
+            "/Game/Carla/Maps/Town01",
+            "/Game/Carla/Maps/Town10HD_Opt",
+        ]
+    )
+
+    assert session.available_maps() == [
+        "/Game/Carla/Maps/Town10HD_Opt",
+        "/Game/Carla/Maps/Town01",
+    ]
+
+
+def test_prepare_rejects_internal_map_before_calling_load_world():
+    previous = World("Town10HD_Opt", "old weather", False, None)
+    session = CarlaSession.__new__(CarlaSession)
+    session.config = AppConfig()
+    session.world = previous
+    session.client = SimpleNamespace(load_world=lambda name: (_ for _ in ()).throw(AssertionError("must not load")))
+
+    try:
+        session.prepare("/Game/Carla/Maps/AnnotationColorLandscape", "ClearNoon", 7)
+    except ValueError as exc:
+        assert "not a drivable CARLA Town map" in str(exc)
+    else:
+        raise AssertionError("internal CARLA map should be rejected before loading")
