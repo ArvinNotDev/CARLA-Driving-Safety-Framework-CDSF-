@@ -10,7 +10,7 @@ import pygame
 
 from carla_drive.config import AppConfig
 from carla_drive.domain import CameraMode, DrivingSnapshot
-from carla_drive.sensors.parking import parking_fill
+from carla_drive.sensors.parking import parking_side_fills
 
 
 class Dashboard:
@@ -155,7 +155,7 @@ class Dashboard:
         bar_width = min(340, int(width * 0.30))
         half = bar_width // 2
         distance = snapshot.rear_distance.closest_m
-        fill = parking_fill(distance, self.config.rear_parking.distance_m)
+        left_fill, right_fill = parking_side_fills(snapshot.rear_distance, self.config.rear_parking.distance_m)
         panel = pygame.Rect(center_x - half - 12, y - 8, bar_width + 24, 42)
         pygame.draw.rect(self.screen, (7, 16, 24), panel, border_radius=11)
         pygame.draw.rect(self.screen, (63, 83, 96), panel, width=1, border_radius=11)
@@ -164,10 +164,14 @@ class Dashboard:
         if distance is not None:
             danger = max(0.0, min(1.0, 1.0 - distance / self.config.rear_parking.warning_distance_m))
             color = (int(70 + 185 * danger), int(205 - 165 * danger), int(85 - 40 * danger))
-            amount = max(3, int(half * fill))
-            pygame.draw.line(self.screen, color, (center_x - amount, track_y), (center_x + amount, track_y), 8)
+            if left_fill:
+                amount = max(3, int(half * left_fill))
+                pygame.draw.line(self.screen, color, (center_x - amount, track_y), (center_x, track_y), 8)
+            if right_fill:
+                amount = max(3, int(half * right_fill))
+                pygame.draw.line(self.screen, color, (center_x, track_y), (center_x + amount, track_y), 8)
         pygame.draw.line(self.screen, (218, 231, 235), (center_x, track_y - 12), (center_x, track_y + 12), 2)
-        label = "CLEAR" if distance is None else f"{distance:.1f} m"
+        label = "NO TARGET" if distance is None else f"{distance:.1f} m"
         self._text(label, (center_x, panel.bottom + 5), self.small, (220, 231, 234), centered=True)
 
     def _draw_telemetry(self, width: int, height: int, snapshot: DrivingSnapshot, controller_name: str) -> None:

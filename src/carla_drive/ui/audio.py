@@ -18,7 +18,7 @@ class ParkingBeep:
     def __init__(self, config: RearParkingConfig):
         self.config = config
         self.sound: pygame.mixer.Sound | None = None
-        self.next_beep_at = 0.0
+        self.last_beep_at = 0.0
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=22_050, size=-16, channels=1, buffer=256)
@@ -44,11 +44,11 @@ class ParkingBeep:
             self.config.fastest_beep_ms,
         )
         if interval is None:
-            self.next_beep_at = now
+            self.last_beep_at = 0.0
             return
-        if self.sound and now >= self.next_beep_at:
+        if self.sound and (not self.last_beep_at or now - self.last_beep_at >= interval / 1000.0):
             self.sound.play()
-            self.next_beep_at = now + interval / 1000.0
+            self.last_beep_at = now
 
     def close(self) -> None:
         if self.sound:
