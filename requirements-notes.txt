@@ -1,0 +1,8 @@
+Runtime dependency direction:
+- carla Python API matching the CARLA server version (target: 0.9.16)
+- pygame
+- numpy
+- optional OpenCV only when image conversion/rendering needs it
+- pytest for pure logic tests
+
+The implementation agent should pin exact versions only after inspecting the actual runtime and validating compatibility. Do not invent a large dependency list.

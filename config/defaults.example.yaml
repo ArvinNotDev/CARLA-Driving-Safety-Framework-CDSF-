@@ -1,0 +1,68 @@
+# Example runtime configuration for CARLA Drive Phase 1.
+# This file documents intended settings; the implementation agent may choose a
+# different parser format if that keeps the project simpler.
+
+carla:
+  host: 127.0.0.1
+  port: 2000
+  traffic_manager_port: 8000
+  client_timeout_seconds: 10.0
+  synchronous_mode: true
+  fixed_delta_seconds: 0.05
+
+session:
+  map: null
+  weather_preset: ClearNoon
+  vehicle_blueprint: null
+  traffic_vehicles: 0
+  pedestrians: 0
+  random_seed: 0
+
+window:
+  width: 1280
+  height: 720
+  target_render_fps: 60
+
+camera:
+  fov: 110
+  main_sensor_tick: 0.0
+  rear_mirror_sensor_tick: 0.0
+
+lidar:
+  enabled: true
+  channels: 32
+  range_m: 50.0
+  points_per_second: 350000
+  rotation_frequency_hz: 20.0
+
+rear_parking:
+  enabled: true
+  distance_m: 6.0
+  hit_radius_m: 0.35
+  warning_distance_m: 2.0
+  critical_distance_m: 0.6
+  beep_slowest_interval_ms: 900
+  beep_fastest_interval_ms: 120
+
+controller:
+  steering_deadzone: 0.06
+  steering_response: 1.4
+  steering_smoothing: 0.08
+  trigger_deadzone: 0.04
+  reverse_requires_stop: true
+
+controls:
+  # Actual pygame/XInput indices must be verified on the target controller.
+  steering_axis: 0
+  throttle_axis: 5
+  brake_axis: 4
+  camera_next_button: 0
+  camera_previous_button: 2
+  reverse_button: 1
+  handbrake_button: 4
+  reset_button: 3
+  pause_button: 7
+
+logging:
+  level: INFO
+  frame_logging: false
