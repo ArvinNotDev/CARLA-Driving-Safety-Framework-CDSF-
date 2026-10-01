@@ -98,3 +98,9 @@ Do not add threads by default.
 Use CARLA's sensor callback system to capture incoming data into bounded/latest-frame state. Pygame rendering stays in the main thread.
 
 Introduce a worker only if a measured bottleneck justifies it, and document the ownership of any shared data.
+
+## Phase 1 implementation map
+
+The entry point is `carla_drive.app.main`. The launcher collects a `SessionConfig`; `CarlaSession` loads the selected map/weather and registers every spawned actor. `CameraRig` owns one transform-switching main camera. `MonitorSensors` owns passive dashboard sensors and publishes latest-frame or latest-distance snapshots. `Dashboard` receives those snapshots and never queries CARLA actors.
+
+The synchronous world is advanced only by `run_driving_loop`. It ticks at the configured fixed step while Pygame renders at its own target frame rate. Camera and LiDAR callbacks replace bounded latest-frame values; they do not render or mutate controls.

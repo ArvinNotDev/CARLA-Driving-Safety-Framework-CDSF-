@@ -50,3 +50,9 @@ Use named actions instead of raw button indices:
 - `quit`
 
 The mapping should live in configuration.
+
+## Current default mapping
+
+The starting mapping uses pygame axis 0 for steering, axis 5 for throttle, and axis 4 for brake. Trigger values are remapped from configurable `trigger_rest_value` to `trigger_full_value`; some drivers expose triggers in a different range or share a single axis. Use `carla-drive --controller-debug` to read raw values and change the axis indices, polarity, or resting/full values in the YAML. Do not tune against assumptions about a controller driver.
+
+Keyboard fallback is available when no configured gamepad is connected: W/S or arrow keys control throttle/brake, A/D steer, R toggles reverse, C/Q cycle views, Space is handbrake, Backspace resets, P pauses, and Esc exits. Reverse changes are rejected above the configured low-speed limit when stop-before-reverse is enabled.

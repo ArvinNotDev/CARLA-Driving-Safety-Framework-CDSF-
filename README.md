@@ -2,6 +2,46 @@
 
 A human-oriented, game-like manual driving environment for CARLA.
 
+## Run the application
+
+Use Python 3.12 with the CARLA 0.9.16 Python API available to that interpreter. Start the CARLA server first, then install the app's lightweight Python dependencies and run it:
+
+```powershell
+python -m pip install -e .
+carla-drive --config config/defaults.example.yaml
+```
+
+Install the test extra when developing: `python -m pip install -e ".[test]"`, then run `python -m pytest`.
+
+The CARLA Python API is supplied by the matching CARLA installation and is intentionally not downloaded as a generic PyPI dependency. If the app cannot connect, check that the server is running and that `carla.host`, `carla.port`, and `carla.timeout_seconds` match it.
+
+The setup screen discovers maps and four-wheel vehicles from the connected server. It starts with zero NPCs; use the arrow keys to select a setting, left/right to change it, then press Enter or click **Start Driving**.
+
+For an API/controller check without spawning vehicles:
+
+```powershell
+python tools/carla_smoke.py --config config/defaults.example.yaml
+carla-drive --config config/defaults.example.yaml --controller-debug
+```
+
+`config/defaults.example.yaml` contains the runtime tuning values. Copy it to a local YAML file if you want to keep personal settings separate.
+
+### Controls
+
+| Action | Xbox mapping | Keyboard fallback |
+| --- | --- | --- |
+| Steer | Left stick X | A / D |
+| Throttle | Right trigger | W / Up |
+| Brake | Left trigger | S / Down |
+| Toggle reverse | Configured button (default B) | R |
+| Change camera | Configured next/previous buttons | C / Q or 1 / 2 / 3 |
+| Handbrake | Configured button | Space |
+| Reset vehicle | Configured button | Backspace |
+| Pause | Configured button | P |
+| Exit | — | Esc / window close |
+
+Controller axis indices and trigger resting/full values vary by driver. Run `--controller-debug`, move each control, and tune the indices and `trigger_rest_value` / `trigger_full_value` in the YAML. The defaults are a starting mapping, not a claim that every Xbox driver reports identical axes.
+
 ## What this project is
 
 This project is the foundation for a long-lived CARLA driving application. Phase 1 is intentionally focused on **making CARLA feel like a proper driving game / simulator UI**, while keeping the architecture ready for later perception, assistance, and autonomous-driving features.
@@ -15,6 +55,15 @@ There is **no autonomous steering, collision avoidance, lane keeping, route foll
 ## CARLA target
 
 This blueprint targets **CARLA 0.9.16** and its Python API. Keep the CARLA version isolated/configurable so a later upgrade does not require rewriting the whole application.
+
+## Code map
+
+- `src/carla_drive/app/main.py` coordinates setup, driving, and shutdown.
+- `src/carla_drive/carla/session.py` owns the CARLA connection, world settings, vehicles, pedestrians, and cleanup.
+- `src/carla_drive/input/controller.py` normalizes controller values and supplies keyboard fallback.
+- `src/carla_drive/camera/rig.py` switches the main camera transform; `sensors/monitor.py` captures the mirror, LiDAR, rear obstacle traces, and collision observations.
+- `src/carla_drive/ui/` contains the setup screen, dashboard, and time-based parking beeps.
+- `src/carla_drive/config.py` validates the YAML runtime configuration; `domain.py` defines compact UI state.
 
 CARLA's client/server model and synchronous mode are important to the runtime architecture. The application should have one clear owner of `world.tick()` and should restore the original world / Traffic Manager settings during shutdown.
 

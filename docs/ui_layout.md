@@ -50,3 +50,7 @@ Gear should be immediately recognizable, e.g. P / R / N / D or an equivalent sta
 ## Responsiveness
 
 UI animations should never block the simulation loop.
+
+## Controls shown at runtime
+
+Use the configured Xbox button mapping to cycle the three camera modes, toggle reverse, pause, reset to the original spawn, and use the handbrake. Keyboard fallback is shown on the launcher: A/D steer, W/S or up/down control pedals, C/Q cycle cameras, R toggles reverse, Space handbrake, Backspace reset, P pause, and Esc exits. The rear distance bar and beep are active only while reversing.
