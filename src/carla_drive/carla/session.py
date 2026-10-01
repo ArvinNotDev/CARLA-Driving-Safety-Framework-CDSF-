@@ -110,9 +110,14 @@ class CarlaSession:
         return vehicle_options(self.world)
 
     def prepare(self, map_name: str | None, weather_name: str, random_seed: int) -> None:
+        if not hasattr(carla.WeatherParameters, weather_name):
+            raise ValueError(f"CARLA weather preset '{weather_name}' is unavailable in this installation.")
         if map_name and friendly_map_name(map_name) != friendly_map_name(self.world.get_map().name):
             LOG.info("Loading map %s", friendly_map_name(map_name))
             self.world = self.client.load_world(map_name)
+            # Loading a map creates a new world with its own settings and weather.
+            self.original_settings = self.world.get_settings()
+            self.original_weather = self.world.get_weather()
 
         settings = self.world.get_settings()
         settings.synchronous_mode = self.config.carla.synchronous_mode
@@ -122,8 +127,6 @@ class CarlaSession:
         self._traffic_manager_touched = True
         self.traffic_manager.set_random_device_seed(random_seed)
 
-        if not hasattr(carla.WeatherParameters, weather_name):
-            raise ValueError(f"CARLA weather preset '{weather_name}' is unavailable in this installation.")
         self.world.set_weather(getattr(carla.WeatherParameters, weather_name))
 
     def spawn_ego(self, blueprint_id: str | None, random_seed: int) -> carla.Vehicle:
@@ -310,14 +313,23 @@ class CarlaSession:
         if self.actors:
             try:
                 commands = [carla.command.DestroyActor(actor.id) for actor in reversed(self.actors)]
-                self.client.apply_batch_sync(commands)
+                responses = self.client.apply_batch_sync(commands, False)
+                for actor, response in zip(reversed(self.actors), responses):
+                    if response.error:
+                        LOG.warning("Could not destroy CARLA actor %s in batch: %s", actor.id, response.error)
+                        try:
+                            if actor.is_alive:
+                                actor.destroy()
+                        except RuntimeError as exc:
+                            LOG.warning("Individual destruction also failed for actor %s: %s", actor.id, exc)
             except RuntimeError as exc:
                 LOG.warning("Batch actor cleanup failed; trying individual destruction: %s", exc)
                 for actor in reversed(self.actors):
                     try:
-                        actor.destroy()
-                    except RuntimeError:
-                        pass
+                        if actor.is_alive:
+                            actor.destroy()
+                    except RuntimeError as error:
+                        LOG.warning("Could not destroy actor %s: %s", actor.id, error)
         if self._traffic_manager_touched and self.original_tm_sync is not None:
             try:
                 self.traffic_manager.set_synchronous_mode(self.original_tm_sync)
