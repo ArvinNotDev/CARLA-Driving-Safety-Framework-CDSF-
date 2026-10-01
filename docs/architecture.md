@@ -103,4 +103,4 @@ Introduce a worker only if a measured bottleneck justifies it, and document the 
 
 The entry point is `carla_drive.app.main`. The launcher collects a `SessionConfig`; `CarlaSession` loads the selected map/weather and registers every spawned actor. `CameraRig` owns one transform-switching main camera. `MonitorSensors` owns passive dashboard sensors and publishes latest-frame or latest-distance snapshots. `Dashboard` receives those snapshots and never queries CARLA actors.
 
-The synchronous world is advanced only by `run_driving_loop`. It ticks at the configured fixed step while Pygame renders at its own target frame rate. Camera and LiDAR callbacks replace bounded latest-frame values; they do not render or mutate controls.
+The synchronous world advances through `CarlaSession.tick()`: once during pedestrian startup after controller actors are spawned, then at the configured fixed step in `run_driving_loop`. Pygame renders at its own target frame rate. Camera and LiDAR callbacks replace bounded latest-frame values; they do not render or mutate controls.

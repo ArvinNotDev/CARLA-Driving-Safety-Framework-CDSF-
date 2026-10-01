@@ -195,9 +195,9 @@ class CarlaSession:
             LOG.warning("This CARLA map exposes no pedestrian blueprints.")
             return 0
         rng = random.Random(random_seed + 3)
-        spawned = 0
+        pending_controllers: list[carla.Actor] = []
         for _ in range(requested * 8):
-            if spawned >= requested:
+            if len(pending_controllers) >= requested:
                 break
             location = self.world.get_random_location_from_navigation()
             if location is None:
@@ -213,16 +213,26 @@ class CarlaSession:
             controller = self.world.try_spawn_actor(controller_blueprint, carla.Transform(), attach_to=walker)
             if controller is None:
                 LOG.warning("Could not create AI controller for pedestrian %s", walker.id)
+                try:
+                    walker.destroy()
+                    self.actors.remove(walker)
+                except RuntimeError as exc:
+                    LOG.warning("Could not remove unpaired pedestrian %s: %s", walker.id, exc)
                 continue
             self.track_actor(controller, walker_controller=True)
+            pending_controllers.append(controller)
+
+        if pending_controllers and self.config.carla.synchronous_mode:
+            # Spawned controllers need one simulation step before starting their AI.
+            self.tick()
+        for controller in pending_controllers:
             controller.start()
             destination = self.world.get_random_location_from_navigation()
             if destination is not None:
                 controller.go_to_location(destination)
             controller.set_max_speed(rng.uniform(1.0, 1.8))
-            spawned += 1
-        LOG.info("Spawned %d of %d requested pedestrians", spawned, requested)
-        return spawned
+        LOG.info("Spawned %d of %d requested pedestrians", len(pending_controllers), requested)
+        return len(pending_controllers)
 
     def track_actor(self, actor: carla.Actor, walker_controller: bool = False, sensor: bool = False) -> None:
         if actor not in self.actors:
