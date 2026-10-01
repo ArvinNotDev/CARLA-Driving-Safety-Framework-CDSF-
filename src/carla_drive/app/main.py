@@ -21,19 +21,16 @@ from carla_drive.ui.dashboard import Dashboard
 from carla_drive.ui.launcher import Launcher
 
 LOG = logging.getLogger("carla_drive")
-DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config" / "defaults.example.yaml"
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Manual driving simulator for CARLA 0.9.16")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="YAML runtime configuration")
+    parser.add_argument("--config", type=Path, help="Optional YAML runtime configuration")
     parser.add_argument("--controller-debug", action="store_true", help="Show live raw gamepad axes and buttons")
     parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     args = parser.parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     try:
-        config = load_config(args.config)
+        config = load_config(args.config) if args.config else AppConfig()
     except (OSError, ValueError, TypeError) as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2

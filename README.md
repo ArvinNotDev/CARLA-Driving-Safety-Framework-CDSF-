@@ -8,7 +8,7 @@ Use Python 3.12 with the CARLA 0.9.16 Python API available to that interpreter. 
 
 ```powershell
 python -m pip install -e .
-carla-drive --config config/defaults.example.yaml
+carla-drive
 ```
 
 Install the test extra when developing: `python -m pip install -e ".[test]"`, then run `python -m pytest`.
@@ -24,7 +24,7 @@ python tools/carla_smoke.py --config config/defaults.example.yaml
 carla-drive --config config/defaults.example.yaml --controller-debug
 ```
 
-`config/defaults.example.yaml` contains the runtime tuning values. Copy it to a local YAML file if you want to keep personal settings separate.
+Built-in defaults work from an installed package. To tune the runtime, copy `config/defaults.example.yaml` to a local YAML file and launch with `carla-drive --config path/to/your.yaml`.
 
 ### Controls
 
