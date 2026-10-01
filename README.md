@@ -8,8 +8,10 @@ Use Python 3.12 with the CARLA 0.9.16 Python API available to that interpreter. 
 
 ```powershell
 python -m pip install -e .
-carla-drive
+python main.py
 ```
+
+You can also use the installed `carla-drive` command. The root `main.py` wrapper runs directly from the checkout.
 
 Install the test extra when developing: `python -m pip install -e ".[test]"`, then run `python -m pytest`.
 
@@ -21,10 +23,10 @@ For an API/controller check without spawning vehicles:
 
 ```powershell
 python tools/carla_smoke.py --config config/defaults.example.yaml
-carla-drive --config config/defaults.example.yaml --controller-debug
+python main.py --config config/defaults.example.yaml --controller-debug
 ```
 
-Built-in defaults work from an installed package. To tune the runtime, copy `config/defaults.example.yaml` to a local YAML file and launch with `carla-drive --config path/to/your.yaml`.
+The setup screen lists installed `Town...` road maps and opens on the server's current Town map when available. Internal CARLA assets such as annotation maps are excluded because they are not driving environments. To tune the runtime, copy `config/defaults.example.yaml` to a local YAML file and launch with `python main.py --config path/to/your.yaml`.
 The current fixed layout supports windows of at least 1024×700 pixels; invalid smaller sizes are rejected during configuration loading.
 
 ### Controls
