@@ -19,13 +19,24 @@ class LatestImage:
         self._lock = threading.Lock()
         self._image: np.ndarray | None = None
         self._received_at = 0.0
+        self._minimum_frame = 0
 
     def callback(self, image: carla.Image) -> None:
+        if image.frame < self._minimum_frame:
+            return
         rgba = np.frombuffer(image.raw_data, dtype=np.uint8).reshape(image.height, image.width, 4)
         rgb = rgba[:, :, 2::-1].copy()
         with self._lock:
+            if image.frame < self._minimum_frame:
+                return
             self._image = rgb
             self._received_at = time.monotonic()
+
+    def clear_before(self, frame: int) -> None:
+        with self._lock:
+            self._minimum_frame = frame
+            self._image = None
+            self._received_at = 0.0
 
     def read(self) -> tuple[np.ndarray | None, float]:
         with self._lock:
@@ -39,6 +50,7 @@ class CameraRig:
         if session.ego_vehicle is None:
             raise RuntimeError("Spawn the ego vehicle before creating its camera rig.")
         self.config = config
+        self.session = session
         self.mode = CameraMode.CHASE
         self.transforms = {
             CameraMode.COCKPIT: carla.Transform(
@@ -70,6 +82,9 @@ class CameraRig:
         self.actor.listen(self.frame.callback)
 
     def set_mode(self, mode: CameraMode) -> None:
+        if mode == self.mode:
+            return
+        self.frame.clear_before(self.session.world.get_snapshot().frame + 1)
         self.mode = mode
         self.actor.set_transform(self.transforms[mode])
 

@@ -42,7 +42,7 @@ class Dashboard:
     ) -> None:
         width, height = self.screen.get_size()
         self.screen.fill((5, 10, 16))
-        main_surface = self._camera_surface(main_frame, mirror=False)
+        main_surface = self._camera_surface(main_frame, mirror=False, allow_stale=paused)
         if main_surface is not None:
             cache_key = (main_frame[1], (width, height))
             if cache_key != self._main_scaled_key:
@@ -53,14 +53,14 @@ class Dashboard:
             self._text("WAITING FOR CARLA CAMERA", (width // 2, height // 2), self.font, (202, 220, 228), centered=True)
         self._draw_edge_shade(width, height)
         self._draw_status(width, status, paused)
-        self._draw_mirror(width, mirror_frame)
-        self._draw_lidar(width, lidar_frame)
+        self._draw_mirror(width, mirror_frame, paused)
+        self._draw_lidar(width, lidar_frame, paused)
         self._draw_parking_bar(width, snapshot)
         self._draw_telemetry(width, height, snapshot, controller_name)
 
-    def _camera_surface(self, frame, mirror: bool) -> pygame.Surface | None:
+    def _camera_surface(self, frame, mirror: bool, allow_stale: bool = False) -> pygame.Surface | None:
         image, timestamp = frame
-        if image is None or timestamp <= 0.0 or time.monotonic() - timestamp > 2.0:
+        if image is None or timestamp <= 0.0 or (not allow_stale and time.monotonic() - timestamp > 2.0):
             return None
         if mirror:
             if timestamp != self._mirror_key:
@@ -89,7 +89,7 @@ class Dashboard:
             self._text(status, (20, 64), self.small, (250, 201, 139))
         self._text("1 Cockpit    2 Chase    3 Overhead", (20, 92), self.small, (198, 212, 220))
 
-    def _draw_mirror(self, width: int, frame) -> None:
+    def _draw_mirror(self, width: int, frame, paused: bool) -> None:
         target_width = min(int(width * 0.29), 380)
         target_height = int(target_width * 0.285)
         x = (width - target_width) // 2
@@ -97,7 +97,7 @@ class Dashboard:
         outer = pygame.Rect(x - 8, y - 8, target_width + 16, target_height + 16)
         pygame.draw.rect(self.screen, (8, 14, 21), outer, border_radius=12)
         pygame.draw.rect(self.screen, (144, 169, 179), outer, width=2, border_radius=12)
-        surface = self._camera_surface(frame, mirror=True)
+        surface = self._camera_surface(frame, mirror=True, allow_stale=paused)
         inner = pygame.Rect(x, y, target_width, target_height)
         if surface is not None:
             self.screen.blit(pygame.transform.scale(surface, inner.size), inner)
@@ -106,9 +106,9 @@ class Dashboard:
             self._text("REAR VIEW", inner.center, self.small, (117, 145, 157), centered=True)
         self._text("REAR VIEW", (outer.x + 8, outer.bottom + 3), self.small, (178, 197, 205))
 
-    def _draw_lidar(self, width: int, frame) -> None:
+    def _draw_lidar(self, width: int, frame, paused: bool) -> None:
         points, timestamp = frame
-        if timestamp <= 0.0 or time.monotonic() - timestamp > 1.5:
+        if timestamp <= 0.0 or (not paused and time.monotonic() - timestamp > 1.5):
             points = None
         panel_width, panel_height = 240, 200
         x, y = width - panel_width - 20, 20
@@ -117,9 +117,9 @@ class Dashboard:
         pygame.draw.rect(self.screen, (64, 91, 108), panel, width=1, border_radius=12)
         self._text("360°  LIDAR", (x + 14, y + 10), self.font, (198, 223, 232))
         canvas_rect = pygame.Rect(x + 12, y + 38, panel_width - 24, panel_height - 50)
-        if self._lidar_key != timestamp:
+        if self._lidar_key != (timestamp if points is not None else 0.0):
             self._lidar_surface = self._build_lidar_surface(canvas_rect.size, points)
-            self._lidar_key = timestamp
+            self._lidar_key = timestamp if points is not None else 0.0
         if self._lidar_surface:
             self.screen.blit(self._lidar_surface, canvas_rect)
         if points is None:

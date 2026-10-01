@@ -161,14 +161,16 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             status = ""
         if paused:
             session.apply_control(0.0, 0.0, 1.0, reverse, True)
+            applied_steering, applied_throttle, applied_brake = 0.0, 0.0, 1.0
         else:
             session.apply_control(control.steering, control.throttle, control.brake, reverse, control.handbrake)
+            applied_steering, applied_throttle, applied_brake = control.steering, control.throttle, control.brake
             if config.carla.synchronous_mode and now >= next_tick_at:
                 session.tick()
                 next_tick_at = time.monotonic() + step_seconds
 
         rear = sensors.rear_distance(now)
-        vehicle = session.snapshot(control.steering, control.throttle, control.brake, reverse)
+        vehicle = session.snapshot(applied_steering, applied_throttle, applied_brake, reverse)
         snapshot = DrivingSnapshot(vehicle=vehicle, rear_distance=rear, camera_mode=camera.mode)
         audio.update(reverse and not paused, rear.closest_m)
         dashboard.render(
