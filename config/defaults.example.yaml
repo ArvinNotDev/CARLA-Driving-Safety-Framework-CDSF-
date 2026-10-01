@@ -1,39 +1,57 @@
-# Example runtime configuration for CARLA Drive Phase 1.
-# This file documents intended settings; the implementation agent may choose a
-# different parser format if that keeps the project simpler.
-
+# CARLA Drive Phase 1 runtime settings. Copy and tune for the local controller.
 carla:
   host: 127.0.0.1
   port: 2000
   traffic_manager_port: 8000
-  client_timeout_seconds: 10.0
+  timeout_seconds: 10.0
   synchronous_mode: true
   fixed_delta_seconds: 0.05
-
-session:
-  map: null
-  weather_preset: ClearNoon
-  vehicle_blueprint: null
-  traffic_vehicles: 0
-  pedestrians: 0
-  random_seed: 0
 
 window:
   width: 1280
   height: 720
-  target_render_fps: 60
+  render_fps: 60
+
+session:
+  map_name: null
+  weather_preset: ClearNoon
+  vehicle_blueprint: null
+  traffic_vehicles: 0
+  pedestrians: 0
+  random_seed: 7
 
 camera:
-  fov: 110
-  main_sensor_tick: 0.0
-  rear_mirror_sensor_tick: 0.0
+  width: 1280
+  height: 720
+  mirror_width: 640
+  mirror_height: 180
+  fov: 100.0
+  cockpit_x: 1.15
+  cockpit_y: 0.0
+  cockpit_z: 1.35
+  cockpit_pitch: -3.0
+  chase_x: -5.2
+  chase_y: 0.0
+  chase_z: 2.5
+  chase_pitch: -12.0
+  overhead_x: -3.0
+  overhead_y: 0.0
+  overhead_z: 12.0
+  overhead_pitch: -68.0
+  mirror_x: -1.1
+  mirror_y: 0.0
+  mirror_z: 1.65
+  mirror_yaw: 180.0
 
 lidar:
   enabled: true
   channels: 32
-  range_m: 50.0
-  points_per_second: 350000
+  range_m: 45.0
+  points_per_second: 120000
   rotation_frequency_hz: 20.0
+  display_points: 3000
+  upper_fov: 10.0
+  lower_fov: -30.0
 
 rear_parking:
   enabled: true
@@ -41,28 +59,33 @@ rear_parking:
   hit_radius_m: 0.35
   warning_distance_m: 2.0
   critical_distance_m: 0.6
-  beep_slowest_interval_ms: 900
-  beep_fastest_interval_ms: 120
+  stale_after_seconds: 0.6
+  sensor_x: -1.4
+  sensor_height_m: 0.65
+  left_offset_m: -0.65
+  right_offset_m: 0.65
+  slowest_beep_ms: 900
+  fastest_beep_ms: 120
 
 controller:
-  steering_deadzone: 0.06
-  steering_response: 1.4
-  steering_smoothing: 0.08
-  trigger_deadzone: 0.04
-  reverse_requires_stop: true
-
-controls:
-  # Actual pygame/XInput indices must be verified on the target controller.
+  joystick_index: 0
   steering_axis: 0
+  steering_axis_inverted: false
   throttle_axis: 5
   brake_axis: 4
+  steering_deadzone: 0.06
+  trigger_deadzone: 0.04
+  steering_response: 1.35
+  throttle_response: 1.0
+  brake_response: 1.0
+  steering_smoothing: 0.10
+  trigger_rest_value: -1.0
+  trigger_full_value: 1.0
+  reverse_button: 1
   camera_next_button: 0
   camera_previous_button: 2
-  reverse_button: 1
   handbrake_button: 4
   reset_button: 3
   pause_button: 7
-
-logging:
-  level: INFO
-  frame_logging: false
+  require_stop_for_reverse: true
+  reverse_stop_speed_mps: 0.8

@@ -2,7 +2,10 @@ Runtime dependency direction:
 - carla Python API matching the CARLA server version (target: 0.9.16)
 - pygame
 - numpy
+- PyYAML
 - optional OpenCV only when image conversion/rendering needs it
 - pytest for pure logic tests
+
+The Python application dependencies are declared in pyproject.toml; install CARLA's Python API from the matching CARLA distribution so it agrees with the server version.
 
 The implementation agent should pin exact versions only after inspecting the actual runtime and validating compatibility. Do not invent a large dependency list.
