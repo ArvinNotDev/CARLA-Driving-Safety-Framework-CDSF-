@@ -70,6 +70,7 @@ class MonitorSensors:
             "range": config.range_m,
             "points_per_second": config.points_per_second,
             "rotation_frequency": config.rotation_frequency_hz,
+            "sensor_tick": 1.0 / config.rotation_frequency_hz,
             "upper_fov": config.upper_fov,
             "lower_fov": config.lower_fov,
         }
@@ -86,6 +87,9 @@ class MonitorSensors:
 
     def _on_lidar(self, measurement: carla.LidarMeasurement) -> None:
         points = np.frombuffer(measurement.raw_data, dtype=np.float32).reshape(-1, 4)
+        points = points[np.isfinite(points).all(axis=1)]
+        if not len(points):
+            return
         if len(points) > self.config.lidar.display_points:
             stride = math.ceil(len(points) / self.config.lidar.display_points)
             points = points[::stride]
