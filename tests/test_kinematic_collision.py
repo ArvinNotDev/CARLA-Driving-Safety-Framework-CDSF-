@@ -1,7 +1,7 @@
 import pytest
 
 from carla_drive.config import KinematicCollisionConfig
-from carla_drive.safety.kinematic_collision import KinematicCollisionDetector
+from carla_drive.safety.kinematic_collision import KinematicCollisionDetector, is_reportable_collision
 
 
 def feed(detector, speeds_mps, brake=0.0, throttle=0.0, dt=0.05, start_time=0.0, reverse=False):
@@ -78,7 +78,7 @@ def test_abrupt_speed_losses_produce_one_impact_candidate(initial_speed, post_im
     assert event.peak_jerk_mps3 > 75.0
     assert 0.0 < event.impact_score <= 1.0
     assert "brake/throttle-aware envelope" in event.reason
-    assert event.impact_score > 0.6
+    assert event.impact_score >= 0.8
 
 
 def test_low_speed_sudden_loss_below_minimum_speed_is_ignored():
@@ -115,15 +115,17 @@ def test_braking_followed_by_abnormal_additional_speed_loss_is_detected():
     assert events[0].peak_deceleration_mps2 > 30.0
 
 
-def test_moderate_abnormal_deceleration_waits_for_short_temporal_confirmation():
+def test_low_confidence_event_is_suppressed_without_blocking_a_later_strong_event():
     detector = KinematicCollisionDetector()
 
     assert feed(detector, [15.0, 15.0, 14.6]) == []
-    events = feed(detector, [14.2], start_time=0.15)
+    assert feed(detector, [14.2], start_time=0.15) == []
+    assert detector._cooldown_until_s is None
+    events = feed(detector, [9.0], start_time=0.20)
 
     assert len(events) == 1
-    assert events[0].timestamp_s == pytest.approx(0.15)
-    assert "persisted across 2 samples" in events[0].reason
+    assert events[0].timestamp_s == pytest.approx(0.20)
+    assert events[0].impact_score >= 0.8
 
 
 def test_variable_sample_intervals_use_elapsed_seconds_for_acceleration():
@@ -188,3 +190,11 @@ def test_motion_history_stays_bounded():
     feed(detector, [15.0] * 20)
 
     assert len(detector.history) == 8
+
+
+def test_only_collision_confidence_at_or_above_threshold_is_reportable():
+    from types import SimpleNamespace
+
+    assert not is_reportable_collision(SimpleNamespace(impact_score=0.799))
+    assert is_reportable_collision(SimpleNamespace(impact_score=0.8))
+    assert not is_reportable_collision(None)
