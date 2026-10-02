@@ -43,13 +43,12 @@ The current fixed layout supports windows of at least 1024×700 pixels; invalid 
 | Pause | Configured button | P |
 | Left / right indicator | D-pad left / right | Z / X |
 | Headlight mode (low → high → off) | D-pad up | H |
-| Horn (hold) | R3 / right stick click | Hold F |
 | Pause menu | — | Esc |
 | Exit | — | Window close |
 
 Controller axis indices and trigger resting/full values vary by driver. Run `--controller-debug`, move each control, and tune the indices and `trigger_rest_value` / `trigger_full_value` in the YAML. The defaults are a starting mapping, not a claim that every Xbox driver reports identical axes.
 
-The pause menu shows a speaker emoji for the current mute state and has controls to mute or unmute the generated engine idle/rev loop, horn, indicator ticks, rear parking beeps, collision alert, and gear-shift cues. It also returns to session setup or resumes the current drive. The synchronous simulation step defaults to 60 Hz and the render cap defaults to 90 FPS; lower these in YAML if the server or graphics hardware cannot keep up. Collision warnings are shown and sounded only at or above the configured `safety.minimum_impact_score` (default 0.80).
+The only application sound is the reverse parking beep; the pause menu's speaker button mutes or unmutes that beep. The other pause actions return to session setup or resume driving. Keyboard actions also work while a controller is connected. The default synchronous simulation rate is 30 Hz, rendering is capped at 60 FPS, and LiDAR runs at 10 Hz with a bounded display point cloud to reduce stutter. Collision warnings are visual only and appear at or above `safety.minimum_impact_score` (default 0.80).
 
 ## What this project is
 
@@ -72,7 +71,7 @@ This blueprint targets **CARLA 0.9.16** and its Python API. Keep the CARLA versi
 - `src/carla_drive/input/controller.py` normalizes controller values and supplies keyboard fallback.
 - `src/carla_drive/camera/rig.py` switches the main camera transform; `sensors/monitor.py` captures the mirror, LiDAR, and rear obstacle traces.
 - `src/carla_drive/safety/kinematic_collision.py` detects strong impact-like events from short-term longitudinal motion and control history without spawning a collision sensor.
-- `src/carla_drive/ui/` contains the setup screen, dashboard, pause menu, and driving audio cues.
+- `src/carla_drive/ui/` contains the setup screen, dashboard, pause menu, and reverse parking beep.
 - `src/carla_drive/config.py` validates the YAML runtime configuration; `domain.py` defines compact UI state.
 
 CARLA's client/server model and synchronous mode are important to the runtime architecture. The application should have one clear owner of `world.tick()` and should restore the original world / Traffic Manager settings during shutdown.
@@ -229,7 +228,7 @@ Shutdown
   -> destroy spawned actors
   -> restore Traffic Manager settings
   -> restore original world settings
-  -> close pygame/audio resources
+  -> close pygame and reverse-beep resources
   -> exit cleanly
 ```
 
