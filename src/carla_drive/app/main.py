@@ -8,6 +8,7 @@ import queue
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pygame
@@ -18,10 +19,12 @@ from carla_drive.carla.session import CarlaSession, discover_weather_presets
 from carla_drive.config import AppConfig, load_config
 from carla_drive.domain import CameraMode, DrivingSnapshot
 from carla_drive.input.controller import ControllerReader
+from carla_drive.input.preferences import load_controller_preferences
 from carla_drive.sensors.monitor import MonitorSensors
 from carla_drive.safety.kinematic_collision import KinematicCollisionDetector, is_reportable_collision
 from carla_drive.ui.audio import ReverseBeep
 from carla_drive.ui.dashboard import Dashboard
+from carla_drive.ui.controller_settings import ControllerSettings
 from carla_drive.ui.launcher import Launcher
 from carla_drive.ui.pause_menu import PauseMenu
 
@@ -50,6 +53,7 @@ def run_application(config: AppConfig) -> int:
     screen = pygame.display.set_mode((config.window.width, config.window.height))
     try:
         reverse_beep_muted = False
+        controller_config = load_controller_preferences(config.controller)
         while True:
             session: CarlaSession | None = None
             controller: ControllerReader | None = None
@@ -71,9 +75,11 @@ def run_application(config: AppConfig) -> int:
                     raise RuntimeError("This CARLA Python API exposes no supported weather presets.")
                 if not vehicles:
                     raise RuntimeError("No four-wheel vehicle blueprints are available in the current CARLA world.")
-                selected = Launcher(screen, maps, weather, vehicles, config.session).run()
+                launcher = Launcher(screen, maps, weather, vehicles, config.session, controller_config)
+                selected = launcher.run()
                 if selected is None:
                     return 0
+                controller_config = launcher.controller_config
 
                 screen.fill((8, 15, 25))
                 loading_font = pygame.font.Font(None, 34)
@@ -85,7 +91,7 @@ def run_application(config: AppConfig) -> int:
                 session.spawn_traffic(selected.traffic_vehicles, selected.random_seed)
                 session.spawn_pedestrians(selected.pedestrians, selected.random_seed)
 
-                controller = ControllerReader(config.controller)
+                controller = ControllerReader(controller_config)
                 camera = CameraRig(session, config.camera)
                 sensors = MonitorSensors(session, config)
                 dashboard = Dashboard(screen, config)
@@ -101,7 +107,11 @@ def run_application(config: AppConfig) -> int:
                     selected.traffic_vehicles,
                     selected.pedestrians,
                 )
-                action = run_driving_loop(session, controller, camera, sensors, dashboard, reverse_beep, screen, config)
+                action = run_driving_loop(
+                    session, controller, camera, sensors, dashboard, reverse_beep, screen,
+                    replace(config, controller=controller_config),
+                )
+                controller_config = controller.config
                 reverse_beep_muted = reverse_beep.muted
             except (RuntimeError, ValueError) as exc:
                 LOG.error("CARLA Drive could not start: %s", exc)
@@ -255,8 +265,13 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
                 if event.key == pygame.K_ESCAPE:
                     reverse_beep.pause()
                     session.set_paused(True)
-                    action = PauseMenu(screen, reverse_beep).run()
+                    pause_menu = PauseMenu(screen, reverse_beep, controller.config, controller.name)
+                    action = pause_menu.run()
                     pygame.display.set_caption("CARLA Drive | Manual Session")
+                    if pause_menu.quit_requested:
+                        return "quit"
+                    controller.apply_config(pause_menu.controller_config)
+                    config = replace(config, controller=pause_menu.controller_config)
                     if action != "resume":
                         return action
                     session.set_paused(False)
@@ -269,10 +284,30 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
                     camera.set_mode(CameraMode.OVERHEAD)
 
         control = controller.sample(events)
+        if "open_settings" in control.pressed:
+            reverse_beep.pause()
+            session.set_paused(True)
+            dialog = ControllerSettings(screen, controller.config, controller_name=controller.name)
+            updated = dialog.run()
+            pygame.display.set_caption("CARLA Drive | Manual Session")
+            if dialog.quit_requested:
+                return "quit"
+            if updated is not None:
+                controller.apply_config(updated)
+                config = replace(config, controller=updated)
+                status = "Controller settings saved"
+                status_until = time.monotonic() + 2.0
+            session.set_paused(False)
+            next_tick_at = time.monotonic() + step_seconds
+            continue
         if "controller_disconnected" in control.pressed:
             lights.clear_indicators()
             status = "Controller disconnected; indicators off"
             status_until = time.monotonic() + 2.0
+        if "indicator_cancel" in control.pressed:
+            lights.clear_indicators()
+            status = "Indicators off"
+            status_until = time.monotonic() + 1.5
         if "camera_next" in control.pressed:
             camera.next_mode(1)
         if "camera_previous" in control.pressed:
