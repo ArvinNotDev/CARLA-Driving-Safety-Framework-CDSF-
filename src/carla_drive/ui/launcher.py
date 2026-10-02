@@ -10,6 +10,8 @@ import pygame
 from carla_drive.carla.session import VehicleOption, friendly_map_name
 from carla_drive.config import SessionConfig
 
+TIME_OF_DAY_OPTIONS = ("Dawn", "Morning", "Noon", "Afternoon", "Sunset", "Night")
+
 GITHUB_URL = "https://github.com/ArvinNotDev/"
 
 BACKGROUND = (7, 15, 25)
@@ -58,6 +60,7 @@ class Launcher:
             "map": self._find_index(self.maps, defaults.map_name, lambda value: friendly_map_name(value)),
             "weather": self._find_index(weather, defaults.weather_preset, lambda value: value[0]),
             "vehicle": self._find_index(vehicles, defaults.vehicle_blueprint, lambda value: value.blueprint_id),
+            "time_of_day": self._find_index(TIME_OF_DAY_OPTIONS, defaults.time_of_day, lambda value: value),
         }
         self.traffic = defaults.traffic_vehicles
         self.pedestrians = defaults.pedestrians
@@ -134,14 +137,14 @@ class Launcher:
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             return self._session_config()
         if key in (pygame.K_UP, pygame.K_w):
-            self.focus = (self.focus - 1) % 5
+            self.focus = (self.focus - 1) % 6
         elif key in (pygame.K_DOWN, pygame.K_s):
-            self.focus = (self.focus + 1) % 5
+            self.focus = (self.focus + 1) % 6
         elif key in (pygame.K_LEFT, pygame.K_a):
             self._change(-1)
         elif key in (pygame.K_RIGHT, pygame.K_d):
             self._change(1)
-        elif key == pygame.K_SPACE and self.focus < 3:
+        elif key == pygame.K_SPACE and self.focus < 4:
             self._open_dropdown(self.focus)
         return _CONTINUE
 
@@ -166,7 +169,7 @@ class Launcher:
             if not rect.collidepoint(position):
                 continue
             self.focus = index
-            if index < 3:
+            if index < 4:
                 self._open_dropdown(index)
                 return _CONTINUE
             minus_rect, plus_rect = self.counter_controls[index]
@@ -178,7 +181,7 @@ class Launcher:
         return _CONTINUE
 
     def _open_dropdown(self, field_index: int) -> None:
-        field = ("map", "weather", "vehicle")[field_index]
+        field = ("map", "weather", "vehicle", "time_of_day")[field_index]
         if self.open_dropdown == field:
             self.open_dropdown = None
             return
@@ -194,6 +197,8 @@ class Launcher:
             return [friendly_map_name(name) for name in self.maps]
         if field == "weather":
             return [label for _, label in self.weather]
+        if field == "time_of_day":
+            return list(TIME_OF_DAY_OPTIONS)
         return [vehicle.label for vehicle in self.vehicles]
 
     def _move_dropdown(self, direction: int) -> None:
@@ -234,12 +239,12 @@ class Launcher:
 
     def _change(self, direction: int, count_step: int = 5, focused: int | None = None) -> None:
         index = self.focus if focused is None else focused
-        field = ("map", "weather", "vehicle")[index] if index < 3 else None
+        field = ("map", "weather", "vehicle", "time_of_day")[index] if index < 4 else None
         if field is not None:
             self.selected[field] = (self.selected[field] + direction) % len(self._options(field))
-        elif index == 3:
-            self.traffic = max(0, min(200, self.traffic + direction * count_step))
         elif index == 4:
+            self.traffic = max(0, min(200, self.traffic + direction * count_step))
+        elif index == 5:
             self.pedestrians = max(0, min(200, self.pedestrians + direction * count_step))
 
     def _session_config(self) -> SessionConfig:
@@ -247,6 +252,7 @@ class Launcher:
             self.defaults,
             map_name=self.maps[self.selected["map"]],
             weather_preset=self.weather[self.selected["weather"]][0],
+            time_of_day=TIME_OF_DAY_OPTIONS[self.selected["time_of_day"]],
             vehicle_blueprint=self.vehicles[self.selected["vehicle"]].blueprint_id,
             traffic_vehicles=self.traffic,
             pedestrians=self.pedestrians,
@@ -298,11 +304,12 @@ class Launcher:
         self._text("Configure your drive", (panel.x + 20, panel.y + 19), self.font_heading, TEXT)
         self._text("Select a value or use the arrow keys", (panel.x + 20, panel.y + 47), self.font_small, MUTED)
 
-        labels = ("MAP", "WEATHER", "EGO VEHICLE", "VEHICLE TRAFFIC", "PEDESTRIANS")
+        labels = ("MAP", "WEATHER", "EGO VEHICLE", "TIME OF DAY", "VEHICLE TRAFFIC", "PEDESTRIANS")
         values = (
             friendly_map_name(self.maps[self.selected["map"]]),
             self.weather[self.selected["weather"]][1],
             self.vehicles[self.selected["vehicle"]].label,
+            TIME_OF_DAY_OPTIONS[self.selected["time_of_day"]],
             str(self.traffic),
             str(self.pedestrians),
         )
@@ -310,8 +317,8 @@ class Launcher:
         self.counter_controls = {}
         row_x = panel.x + 18
         row_width = panel.w - 36
-        row_height = 62
-        row_gap = 9
+        row_height = 52
+        row_gap = 5
         row_start = panel.y + 82
         mouse = pygame.mouse.get_pos()
 
@@ -326,14 +333,14 @@ class Launcher:
                 pygame.draw.rect(self.screen, ACCENT, (row.x, row.y + 12, 3, row.h - 24), border_radius=2)
 
             self._text(label, (row.x + 17, row.y + 8), self.font_small, MUTED)
-            if index < 3:
-                self._text(self._fit(value, self.font_value, row.w - 94), (row.x + 17, row.y + 30), self.font_value, TEXT)
-                chevron = pygame.Rect(row.right - 42, row.y + 15, 26, 30)
+            if index < 4:
+                self._text(self._fit(value, self.font_value, row.w - 94), (row.x + 17, row.y + 25), self.font_value, TEXT)
+                chevron = pygame.Rect(row.right - 42, row.y + 11, 26, 30)
                 pygame.draw.rect(self.screen, (26, 55, 68), chevron, border_radius=8)
                 self._draw_chevron(chevron.center, ACCENT)
             else:
-                unit = "VEHICLES" if index == 3 else "PEOPLE"
-                self._text(value, (row.x + 17, row.y + 28), self.font_value, TEXT)
+                unit = "VEHICLES" if index == 4 else "PEOPLE"
+                self._text(value, (row.x + 17, row.y + 23), self.font_value, TEXT)
                 value_width = self.font_value.size(value)[0]
                 self._text(unit, (row.x + 27 + value_width, row.y + 35), self.font_small, MUTED)
                 minus = pygame.Rect(row.right - 80, row.y + 15, 30, 32)
@@ -364,10 +371,11 @@ class Launcher:
 
         weather_name = self.weather[self.selected["weather"]][1]
         vehicle_name = self.vehicles[self.selected["vehicle"]].label
-        self._draw_summary_row(x, panel.y + 194, "WEATHER", weather_name)
-        self._draw_summary_row(x, panel.y + 247, "EGO VEHICLE", vehicle_name)
+        self._draw_summary_row(x, panel.y + 185, "WEATHER", weather_name)
+        self._draw_summary_row(x, panel.y + 231, "EGO VEHICLE", vehicle_name)
+        self._draw_summary_row(x, panel.y + 277, "TIME OF DAY", TIME_OF_DAY_OPTIONS[self.selected["time_of_day"]])
 
-        divider_y = panel.y + 307
+        divider_y = panel.y + 325
         pygame.draw.line(self.screen, PANEL_EDGE, (x, divider_y), (panel.right - 19, divider_y), 1)
         stat_y = divider_y + 14
         stat_gap = 10
@@ -426,7 +434,7 @@ class Launcher:
     def _layout_dropdown(self, height: int) -> None:
         if self.open_dropdown is None:
             return
-        field_index = ("map", "weather", "vehicle").index(self.open_dropdown)
+        field_index = ("map", "weather", "vehicle", "time_of_day").index(self.open_dropdown)
         if field_index >= len(self.row_rects):
             return
         anchor = self.row_rects[field_index]
