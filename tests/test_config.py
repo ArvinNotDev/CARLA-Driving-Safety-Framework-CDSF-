@@ -9,8 +9,11 @@ from carla_drive.config import load_config
 def test_default_configuration_loads_and_validates():
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "defaults.example.yaml")
-    assert config.carla.fixed_delta_seconds == 0.0166667
-    assert config.window.render_fps == 90
+    assert config.carla.fixed_delta_seconds == 0.0333333
+    assert config.window.render_fps == 60
+    assert config.lidar.points_per_second == 60000
+    assert config.lidar.rotation_frequency_hz == 10.0
+    assert config.lidar.display_points == 1000
     assert config.session.time_of_day == "Noon"
     assert config.session.traffic_vehicles == 0
     assert config.controller.trigger_full_value == 1.0
