@@ -20,7 +20,7 @@ class EgoLightState:
     _HEADLIGHT_SEQUENCE = (HeadlightMode.OFF, HeadlightMode.LOW, HeadlightMode.HIGH)
 
     def __init__(self) -> None:
-        self.headlights = HeadlightMode.OFF
+        self.headlights = HeadlightMode.LOW
         self.left_indicator = False
         self.right_indicator = False
         self.braking = False
@@ -79,6 +79,8 @@ class EgoLightState:
             return self._cached_state
 
         state = light_flags.NONE
+        if self.headlights is not HeadlightMode.OFF:
+            state |= light_flags.Position
         if self.headlights is HeadlightMode.LOW:
             state |= light_flags.LowBeam
         elif self.headlights is HeadlightMode.HIGH:
