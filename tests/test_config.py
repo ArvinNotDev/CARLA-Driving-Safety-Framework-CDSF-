@@ -9,7 +9,9 @@ from carla_drive.config import load_config
 def test_default_configuration_loads_and_validates():
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "defaults.example.yaml")
-    assert config.carla.fixed_delta_seconds == 0.05
+    assert config.carla.fixed_delta_seconds == 0.0166667
+    assert config.window.render_fps == 90
+    assert config.session.time_of_day == "Noon"
     assert config.session.traffic_vehicles == 0
     assert config.controller.trigger_full_value == 1.0
     assert config.controller.horn_button == 9
@@ -34,6 +36,20 @@ def test_configuration_rejects_long_kinematic_confirmation_window(tmp_path):
     path = tmp_path / "slow-impact.yaml"
     path.write_text("safety:\n  confirmation_window_seconds: 0.5\n", encoding="utf-8")
     with pytest.raises(ValueError, match="confirmation window"):
+        load_config(path)
+
+
+def test_configuration_rejects_invalid_collision_confidence_threshold(tmp_path):
+    path = tmp_path / "confidence.yaml"
+    path.write_text("safety:\n  minimum_impact_score: 1.1\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="minimum_impact_score"):
+        load_config(path)
+
+
+def test_configuration_rejects_unknown_time_of_day(tmp_path):
+    path = tmp_path / "time.yaml"
+    path.write_text("session:\n  time_of_day: midnight\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="time_of_day"):
         load_config(path)
 
 
