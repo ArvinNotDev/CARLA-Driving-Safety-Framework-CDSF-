@@ -27,6 +27,31 @@ WEATHER_LABELS = {
     "DustStorm": "Dust Storm",
 }
 
+TIME_OF_DAY_SUN_ALTITUDES = {
+    "Dawn": 5.0,
+    "Morning": 25.0,
+    "Noon": 75.0,
+    "Afternoon": 35.0,
+    "Sunset": -5.0,
+    "Night": -90.0,
+}
+WEATHER_PARAMETERS = (
+    "cloudiness",
+    "precipitation",
+    "precipitation_deposits",
+    "wind_intensity",
+    "sun_azimuth_angle",
+    "sun_altitude_angle",
+    "fog_density",
+    "fog_distance",
+    "fog_falloff",
+    "wetness",
+    "scattering_intensity",
+    "mie_scattering_scale",
+    "rayleigh_scattering_scale",
+    "dust_storm",
+)
+
 
 @dataclass(frozen=True)
 class VehicleOption:
@@ -73,6 +98,20 @@ def is_drivable_map(map_name: str) -> bool:
     """Return whether a CARLA map name follows the packaged Town map convention."""
     name = friendly_map_name(map_name)
     return len(name) > 4 and name.startswith("Town") and name[4].isdigit()
+
+
+def weather_for_time_of_day(weather_name: str, time_of_day: str):
+    if time_of_day not in TIME_OF_DAY_SUN_ALTITUDES:
+        raise ValueError(f"Unsupported time of day '{time_of_day}'.")
+    preset = getattr(carla.WeatherParameters, weather_name)
+    if time_of_day == "Noon" and weather_name.endswith("Noon"):
+        return preset
+    weather = carla.WeatherParameters()
+    for name in WEATHER_PARAMETERS:
+        if hasattr(preset, name):
+            setattr(weather, name, getattr(preset, name))
+    weather.sun_altitude_angle = TIME_OF_DAY_SUN_ALTITUDES[time_of_day]
+    return weather
 
 
 class CarlaSession:
@@ -137,7 +176,7 @@ class CarlaSession:
     def available_vehicles(self) -> list[VehicleOption]:
         return vehicle_options(self.world)
 
-    def prepare(self, map_name: str | None, weather_name: str, random_seed: int) -> None:
+    def prepare(self, map_name: str | None, weather_name: str, random_seed: int, time_of_day: str = "Noon") -> None:
         if not hasattr(carla.WeatherParameters, weather_name):
             raise ValueError(f"CARLA weather preset '{weather_name}' is unavailable in this installation.")
         if map_name and not is_drivable_map(map_name):
@@ -166,7 +205,7 @@ class CarlaSession:
         self._traffic_manager_touched = True
         self.traffic_manager.set_random_device_seed(random_seed)
 
-        self.world.set_weather(getattr(carla.WeatherParameters, weather_name))
+        self.world.set_weather(weather_for_time_of_day(weather_name, time_of_day))
 
     def spawn_ego(self, blueprint_id: str | None, random_seed: int) -> carla.Vehicle:
         options = self.available_vehicles()
