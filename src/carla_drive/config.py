@@ -17,14 +17,14 @@ class CarlaConfig:
     traffic_manager_port: int = 8000
     timeout_seconds: float = 10.0
     synchronous_mode: bool = True
-    fixed_delta_seconds: float = 1.0 / 60.0
+    fixed_delta_seconds: float = 1.0 / 30.0
 
 
 @dataclass(frozen=True)
 class WindowConfig:
     width: int = 1280
     height: int = 720
-    render_fps: int = 90
+    render_fps: int = 60
 
 
 @dataclass(frozen=True)
@@ -69,9 +69,9 @@ class LidarConfig:
     channels: int = 32
     range_m: float = 45.0
     display_range_m: float = 32.0
-    points_per_second: int = 120_000
-    rotation_frequency_hz: float = 20.0
-    display_points: int = 3_000
+    points_per_second: int = 60_000
+    rotation_frequency_hz: float = 10.0
+    display_points: int = 1_000
     upper_fov: float = 10.0
     lower_fov: float = -30.0
 
