@@ -17,20 +17,21 @@ class CarlaConfig:
     traffic_manager_port: int = 8000
     timeout_seconds: float = 10.0
     synchronous_mode: bool = True
-    fixed_delta_seconds: float = 0.05
+    fixed_delta_seconds: float = 1.0 / 60.0
 
 
 @dataclass(frozen=True)
 class WindowConfig:
     width: int = 1280
     height: int = 720
-    render_fps: int = 60
+    render_fps: int = 90
 
 
 @dataclass(frozen=True)
 class SessionConfig:
     map_name: str | None = None
     weather_preset: str = "ClearNoon"
+    time_of_day: str = "Noon"
     vehicle_blueprint: str | None = None
     traffic_vehicles: int = 0
     pedestrians: int = 0
@@ -101,6 +102,7 @@ class KinematicCollisionConfig:
     jerk_threshold_mps3: float = 75.0
     confirmation_window_seconds: float = 0.12
     cooldown_seconds: float = 0.75
+    minimum_impact_score: float = 0.8
 
 
 @dataclass(frozen=True)
@@ -216,6 +218,8 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("CARLA timeout_seconds must be positive.")
     if not 0 < config.carla.fixed_delta_seconds <= 0.1:
         raise ValueError("fixed_delta_seconds must be greater than 0 and at most 0.1, including for pause mode.")
+    if config.window.render_fps < 30:
+        raise ValueError("window.render_fps must be at least 30.")
     if config.window.width < 1024 or config.window.height < 700 or config.window.render_fps <= 0:
         raise ValueError("The dashboard requires at least a 1024x700 window and a positive render_fps.")
     if min(config.camera.width, config.camera.height, config.camera.mirror_width, config.camera.mirror_height) <= 0:
@@ -226,6 +230,8 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Traffic and pedestrian counts cannot be negative.")
     if max(config.session.traffic_vehicles, config.session.pedestrians) > 200:
         raise ValueError("Traffic and pedestrian counts cannot exceed 200 in the launcher.")
+    if config.session.time_of_day not in {"Dawn", "Morning", "Noon", "Afternoon", "Sunset", "Night"}:
+        raise ValueError("session.time_of_day must be Dawn, Morning, Noon, Afternoon, Sunset, or Night.")
     controller = config.controller
     if controller.joystick_index < 0:
         raise ValueError("Controller joystick_index cannot be negative.")
@@ -275,6 +281,7 @@ def validate_config(config: AppConfig) -> None:
         safety.jerk_threshold_mps3,
         safety.confirmation_window_seconds,
         safety.cooldown_seconds,
+        safety.minimum_impact_score,
     )
     try:
         finite_safety_thresholds = all(isfinite(value) for value in safety_thresholds)
@@ -290,3 +297,5 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Kinematic collision deceleration and jerk thresholds must be positive.")
     if not 0 < safety.confirmation_window_seconds <= 0.3 or safety.cooldown_seconds < 0:
         raise ValueError("Kinematic collision confirmation window must be in (0, 0.3] seconds and cooldown non-negative.")
+    if not 0.0 <= safety.minimum_impact_score <= 1.0:
+        raise ValueError("Kinematic collision minimum_impact_score must be between 0 and 1.")
