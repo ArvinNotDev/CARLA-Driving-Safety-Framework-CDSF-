@@ -1,4 +1,4 @@
-from carla_drive.input.controller import normalize_steering, normalize_trigger
+from carla_drive.input.controller import dpad_pressed, normalize_steering, normalize_trigger
 import math
 
 
@@ -29,3 +29,15 @@ def test_invalid_axis_samples_cannot_turn_or_accelerate():
     for value in (math.nan, math.inf, -math.inf):
         assert normalize_steering(value, 0.06, 1.35) == 0.0
         assert normalize_trigger(value, -1.0, 1.0, 0.04) == 0.0
+
+
+def test_dpad_actions_are_edges_and_switch_sides_once():
+    assert dpad_pressed((0, 0), (-1, 0)) == {"indicator_left"}
+    assert dpad_pressed((-1, 0), (-1, 0)) == set()
+    assert dpad_pressed((-1, 0), (1, 0)) == {"indicator_right"}
+
+
+def test_dpad_up_only_cycles_when_pressed_and_diagonals_can_combine():
+    assert dpad_pressed((0, 0), (0, 1)) == {"headlight_cycle"}
+    assert dpad_pressed((0, 1), (0, 1)) == set()
+    assert dpad_pressed((0, 0), (-1, 1)) == {"headlight_cycle", "indicator_left"}

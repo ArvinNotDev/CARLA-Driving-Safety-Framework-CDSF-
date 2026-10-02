@@ -12,6 +12,8 @@ def test_default_configuration_loads_and_validates():
     assert config.carla.fixed_delta_seconds == 0.05
     assert config.session.traffic_vehicles == 0
     assert config.controller.trigger_full_value == 1.0
+    assert config.controller.horn_button == 9
+    assert config.controller.dpad_hat == 0
 
 
 def test_configuration_rejects_unknown_settings(tmp_path):
