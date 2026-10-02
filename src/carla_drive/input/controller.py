@@ -96,7 +96,6 @@ class ControllerReader:
         "handbrake": "handbrake_button",
         "reset": "reset_button",
         "pause": "pause_button",
-        "horn": "horn_button",
     }
 
     def __init__(self, config: ControllerConfig):
@@ -189,7 +188,10 @@ class ControllerReader:
                         self.keyboard_fallback = True
                         return self._with_disconnect_marker(self._sample_keyboard())
                 self.keyboard_fallback = False
-                return self._with_disconnect_marker(self._sample_joystick())
+                control = self._sample_joystick()
+                if self._keyboard_focused and self._keyboard_pressed:
+                    control = replace(control, pressed=control.pressed | self._keyboard_pressed)
+                return self._with_disconnect_marker(control)
             except pygame.error:
                 self._disconnect()
         if self.joystick:
@@ -243,7 +245,7 @@ class ControllerReader:
             pressed |= dpad_pressed(self._previous_hat, hat)
         self._previous_buttons = current
         self._previous_hat = hat
-        return ControlInput(steering, throttle, brake, current["handbrake"], pressed, horn=current["horn"])
+        return ControlInput(steering, throttle, brake, current["handbrake"], pressed)
 
     def _button(self, index: int) -> bool:
         return 0 <= index < self.joystick.get_numbuttons() and bool(self.joystick.get_button(index))
@@ -256,8 +258,7 @@ class ControllerReader:
         throttle = float(keys[pygame.K_w] or keys[pygame.K_UP])
         brake = float(keys[pygame.K_s] or keys[pygame.K_DOWN])
         handbrake = bool(keys[pygame.K_SPACE])
-        horn = bool(keys[pygame.K_f])
-        return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed, horn=horn)
+        return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed)
 
     def close(self) -> None:
         if self.joystick:
