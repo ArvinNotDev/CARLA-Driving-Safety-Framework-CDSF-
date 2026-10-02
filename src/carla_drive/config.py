@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,18 @@ class RearParkingConfig:
 
 
 @dataclass(frozen=True)
+class KinematicCollisionConfig:
+    enabled: bool = True
+    minimum_speed_mps: float = 2.0
+    normal_braking_deceleration_mps2: float = 10.0
+    throttle_release_deceleration_mps2: float = 3.0
+    excess_deceleration_mps2: float = 4.0
+    jerk_threshold_mps3: float = 75.0
+    confirmation_window_seconds: float = 0.12
+    cooldown_seconds: float = 0.75
+
+
+@dataclass(frozen=True)
 class ControllerConfig:
     joystick_index: int = 0
     steering_axis: int = 0
@@ -125,6 +138,7 @@ class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     lidar: LidarConfig = field(default_factory=LidarConfig)
     rear_parking: RearParkingConfig = field(default_factory=RearParkingConfig)
+    safety: KinematicCollisionConfig = field(default_factory=KinematicCollisionConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
 
 
@@ -158,6 +172,7 @@ def load_config(path: str | Path) -> AppConfig:
         "camera": (CameraConfig, {item.name for item in fields(CameraConfig)}),
         "lidar": (LidarConfig, {item.name for item in fields(LidarConfig)}),
         "rear_parking": (RearParkingConfig, {item.name for item in fields(RearParkingConfig)}),
+        "safety": (KinematicCollisionConfig, {item.name for item in fields(KinematicCollisionConfig)}),
         "controller": (ControllerConfig, {item.name for item in fields(ControllerConfig)}),
     }
     values: dict[str, Any] = {}
@@ -226,3 +241,27 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Enabled LiDAR range_m must be positive.")
     if config.lidar.enabled and not 0 < config.lidar.display_range_m <= config.lidar.range_m:
         raise ValueError("Enabled LiDAR display_range_m must be positive and no greater than range_m.")
+    safety = config.safety
+    safety_thresholds = (
+        safety.minimum_speed_mps,
+        safety.normal_braking_deceleration_mps2,
+        safety.throttle_release_deceleration_mps2,
+        safety.excess_deceleration_mps2,
+        safety.jerk_threshold_mps3,
+        safety.confirmation_window_seconds,
+        safety.cooldown_seconds,
+    )
+    try:
+        finite_safety_thresholds = all(isfinite(value) for value in safety_thresholds)
+    except TypeError:
+        finite_safety_thresholds = False
+    if not finite_safety_thresholds:
+        raise ValueError("Kinematic collision thresholds must be finite numbers.")
+    if safety.minimum_speed_mps <= 0:
+        raise ValueError("Kinematic collision minimum_speed_mps must be positive.")
+    if safety.normal_braking_deceleration_mps2 < 1.0 or safety.throttle_release_deceleration_mps2 < 0.0:
+        raise ValueError("Kinematic collision normal braking deceleration must be >= 1 and throttle-release deceleration non-negative.")
+    if safety.excess_deceleration_mps2 <= 0 or safety.jerk_threshold_mps3 <= 0:
+        raise ValueError("Kinematic collision deceleration and jerk thresholds must be positive.")
+    if not 0 < safety.confirmation_window_seconds <= 0.3 or safety.cooldown_seconds < 0:
+        raise ValueError("Kinematic collision confirmation window must be in (0, 0.3] seconds and cooldown non-negative.")

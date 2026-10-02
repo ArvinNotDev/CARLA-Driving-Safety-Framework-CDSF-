@@ -30,6 +30,13 @@ def test_configuration_rejects_invalid_parking_thresholds(tmp_path):
         load_config(path)
 
 
+def test_configuration_rejects_long_kinematic_confirmation_window(tmp_path):
+    path = tmp_path / "slow-impact.yaml"
+    path.write_text("safety:\n  confirmation_window_seconds: 0.5\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="confirmation window"):
+        load_config(path)
+
+
 def test_entry_point_uses_builtin_defaults_without_repository_config(monkeypatch):
     app_main = import_module("carla_drive.app.main")
     observed = []

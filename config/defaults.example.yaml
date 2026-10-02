@@ -68,6 +68,16 @@ rear_parking:
   slowest_beep_ms: 900
   fastest_beep_ms: 120
 
+safety:
+  enabled: true
+  minimum_speed_mps: 2.0
+  normal_braking_deceleration_mps2: 10.0
+  throttle_release_deceleration_mps2: 3.0
+  excess_deceleration_mps2: 4.0
+  jerk_threshold_mps3: 75.0
+  confirmation_window_seconds: 0.12
+  cooldown_seconds: 0.75
+
 controller:
   joystick_index: 0
   steering_axis: 0

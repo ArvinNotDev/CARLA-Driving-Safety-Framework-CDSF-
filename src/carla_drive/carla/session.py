@@ -341,13 +341,29 @@ class CarlaSession:
     def snapshot(self, steering: float, throttle: float, brake: float, reverse: bool):
         from carla_drive.domain import VehicleSnapshot
 
+        longitudinal_velocity = 0.0
+        speed_mps = 0.0
+        kinematic_state_available = False
+        world_snapshot = self.world.get_snapshot()
+        simulation_time = world_snapshot.timestamp.elapsed_seconds
+        if self.ego_vehicle is not None:
+            actor_snapshot = world_snapshot.find(self.ego_vehicle.id)
+            if actor_snapshot is not None:
+                kinematic_state_available = True
+                velocity = actor_snapshot.get_velocity()
+                forward = actor_snapshot.get_transform().get_forward_vector()
+                longitudinal_velocity = velocity.x * forward.x + velocity.y * forward.y + velocity.z * forward.z
+                speed_mps = (velocity.x**2 + velocity.y**2 + velocity.z**2) ** 0.5
         return VehicleSnapshot(
-            speed_kmh=self.vehicle_speed_mps() * 3.6,
+            speed_kmh=speed_mps * 3.6,
             gear="R" if reverse else "D",
             reverse=reverse,
             steering=steering,
             throttle=throttle,
             brake=brake,
+            longitudinal_velocity_mps=longitudinal_velocity,
+            simulation_time_s=simulation_time,
+            kinematic_state_available=kinematic_state_available,
         )
 
     def _get_traffic_manager_sync(self) -> bool | None:

@@ -30,6 +30,9 @@ class VehicleSnapshot:
     steering: float = 0.0
     throttle: float = 0.0
     brake: float = 0.0
+    longitudinal_velocity_mps: float = 0.0
+    simulation_time_s: float = 0.0
+    kinematic_state_available: bool = False
 
 
 @dataclass(frozen=True)

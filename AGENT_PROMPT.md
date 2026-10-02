@@ -68,7 +68,7 @@ Do NOT implement:
 
 The LiDAR and rear parking sensor are passive monitoring features for Phase 1.
 
-A collision event can be displayed/logged, but it must not secretly change the driver's input.
+A kinematic impact candidate can be displayed/logged, but it must not secretly change the driver's input.
 
 ## Technical direction
 
@@ -178,11 +178,12 @@ Create clear sensor components for:
 - rear-view RGB camera;
 - 360 LiDAR;
 - rear parking distance;
-- collision event observation.
 
 Each sensor should provide a small, understandable data object or latest snapshot.
 
 Do not make UI widgets reach into raw CARLA sensor actors.
+
+Kinematic impact analysis belongs in a separate `safety/` service that consumes vehicle telemetry and control state; do not add a collision sensor for it.
 
 #### Rear parking distance
 

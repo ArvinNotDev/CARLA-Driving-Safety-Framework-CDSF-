@@ -17,6 +17,7 @@ from carla_drive.config import AppConfig, load_config
 from carla_drive.domain import CameraMode, DrivingSnapshot
 from carla_drive.input.controller import ControllerReader
 from carla_drive.sensors.monitor import MonitorSensors
+from carla_drive.safety.kinematic_collision import KinematicCollisionDetector
 from carla_drive.ui.audio import ParkingBeep
 from carla_drive.ui.dashboard import Dashboard
 from carla_drive.ui.launcher import Launcher
@@ -130,6 +131,8 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
     clock = pygame.time.Clock()
     reverse = False
     lights = EgoLightState()
+    collision_detector = KinematicCollisionDetector(config.safety)
+    detector_vehicle_id = session.ego_vehicle.id if session.ego_vehicle else None
     paused = False
     running = True
     status = ""
@@ -171,6 +174,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
         if "reset" in control.pressed:
             session.reset_ego()
             sensors.clear_rear()
+            collision_detector.reset()
             reverse = False
             lights.clear_indicators()
             status = "Vehicle reset to its starting position"
@@ -211,8 +215,44 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
                 next_tick_at = time.monotonic() + step_seconds
 
         rear = sensors.rear_distance(now)
+        current_vehicle_id = session.ego_vehicle.id if session.ego_vehicle else None
+        if current_vehicle_id != detector_vehicle_id:
+            collision_detector.reset()
+            detector_vehicle_id = current_vehicle_id
         vehicle = session.snapshot(applied_steering, applied_throttle, applied_brake, reverse)
         snapshot = DrivingSnapshot(vehicle=vehicle, rear_distance=rear, camera_mode=camera.mode)
+        if vehicle.kinematic_state_available:
+            collision_event = collision_detector.update(
+                timestamp_s=vehicle.simulation_time_s,
+                longitudinal_velocity_mps=vehicle.longitudinal_velocity_mps,
+                brake_input=applied_brake,
+                throttle_input=applied_throttle,
+                reverse=reverse,
+            )
+        else:
+            collision_detector.reset()
+            collision_event = None
+        if collision_event:
+            speed_drop_kmh = max(
+                0.0,
+                (collision_event.pre_impact_speed_mps - collision_event.post_impact_speed_mps) * 3.6,
+            )
+            LOG.warning(
+                "Kinematic impact candidate at t=%.3fs: speed %.1f -> %.1f km/h, "
+                "peak deceleration %.1f m/s^2, peak jerk %.1f m/s^3, brake=%.2f, "
+                "throttle=%.2f, impact_score=%.2f (%s)",
+                collision_event.timestamp_s,
+                collision_event.pre_impact_speed_mps * 3.6,
+                collision_event.post_impact_speed_mps * 3.6,
+                collision_event.peak_deceleration_mps2,
+                collision_event.peak_jerk_mps3,
+                collision_event.brake_input,
+                collision_event.throttle_input,
+                collision_event.impact_score,
+                collision_event.reason,
+            )
+            status = f"IMPACT CANDIDATE | drop {speed_drop_kmh:.0f} km/h | score {collision_event.impact_score:.2f}"
+            status_until = time.monotonic() + 3.0
         audio.set_horn(control.horn and not paused)
         audio.update(reverse and not paused, rear.closest_m)
         dashboard.render(

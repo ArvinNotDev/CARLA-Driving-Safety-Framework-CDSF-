@@ -49,7 +49,11 @@ Camera presets and active image stream.
 
 ### `sensors`
 
-Raw CARLA sensor actors -> compact state.
+Raw dashboard sensor actors -> compact state. Impact candidates are estimated separately from vehicle telemetry.
+
+### `safety`
+
+Small passive analysis services that consume vehicle snapshots and normalized control values. The kinematic impact detector does not own or spawn CARLA actors.
 
 ### `domain`
 
@@ -79,6 +83,7 @@ The main loop may coordinate:
 - control application;
 - simulation tick;
 - snapshot refresh;
+- feeding current vehicle motion/control telemetry to the kinematic impact detector;
 - UI render;
 - input events.
 
@@ -88,6 +93,7 @@ The main loop should not contain:
 - blueprint selection logic;
 - LiDAR point-cloud conversion details;
 - rear sensor threshold logic;
+- impact signal analysis;
 - complicated drawing code;
 - actor destruction details.
 

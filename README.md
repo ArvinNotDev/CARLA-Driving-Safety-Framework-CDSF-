@@ -67,7 +67,8 @@ This blueprint targets **CARLA 0.9.16** and its Python API. Keep the CARLA versi
 - `src/carla_drive/app/main.py` coordinates setup, driving, and shutdown.
 - `src/carla_drive/carla/session.py` owns the CARLA connection, world settings, vehicles, pedestrians, and cleanup.
 - `src/carla_drive/input/controller.py` normalizes controller values and supplies keyboard fallback.
-- `src/carla_drive/camera/rig.py` switches the main camera transform; `sensors/monitor.py` captures the mirror, LiDAR, rear obstacle traces, and collision observations.
+- `src/carla_drive/camera/rig.py` switches the main camera transform; `sensors/monitor.py` captures the mirror, LiDAR, and rear obstacle traces.
+- `src/carla_drive/safety/kinematic_collision.py` detects strong impact-like events from short-term longitudinal motion and control history without spawning a collision sensor.
 - `src/carla_drive/ui/` contains the setup screen, dashboard, and time-based parking beeps.
 - `src/carla_drive/config.py` validates the YAML runtime configuration; `domain.py` defines compact UI state.
 
@@ -181,7 +182,7 @@ Camera presets, camera switching and camera frame acquisition.
 
 `sensors/`
 
-LiDAR, rear parking distance, rear mirror camera, collision/event observation and sensor snapshots. Sensors are data providers, not autonomous controllers.
+LiDAR, rear parking distance, rear mirror camera, and sensor snapshots. Sensors are data providers, not autonomous controllers. Kinematic impact analysis belongs to the separate `safety` service.
 
 `ui/`
 
@@ -265,6 +266,10 @@ The renderer should map the closest relevant distance to a symmetric visual bar:
 The visual fill should expand from the center toward both sides as the obstacle approaches. Keep the thresholds/configuration outside the widget itself.
 
 The parking sensor may trigger a warning/beep, but **must not apply brake or steering in Phase 1**.
+
+### Kinematic impact candidates
+
+The passive detector estimates longitudinal acceleration and jerk from the ego vehicle's velocity history using CARLA simulation timestamps. It compares observed deceleration with a brake- and throttle-aware envelope and briefly confirms abnormal samples before reporting an impact candidate. It does not read collision sensors, obstacle sensors, LiDAR, cameras, or raycasts. Kinematic inference can identify strong impact-like motion but cannot perfectly distinguish every collision from every other abrupt maneuver; it is not CARLA ground truth. Thresholds are in the `safety` section of the YAML configuration. See [docs/kinematic_collision.md](docs/kinematic_collision.md) for the method and assumptions.
 
 ## State model
 

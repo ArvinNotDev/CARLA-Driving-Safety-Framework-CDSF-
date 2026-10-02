@@ -36,11 +36,11 @@ The implementation uses three narrow traces (left, center, right), expires measu
 
 The LiDAR callback decimates each measurement to a configured display-point budget before storing it. The UI draws a zoomed top-down 360-degree view with distance rings and return-height colors. `display_range_m` controls the visible crop independently of the physical sensor `range_m`. This is a display monitor, not object classification or control input.
 
-## Collision sensor
+## Kinematic impact detection
 
-Purpose: observation/logging only in Phase 1.
+Impact candidates are estimated in `safety/kinematic_collision.py` from the ego vehicle's longitudinal velocity, simulation timestamps, and applied pedal inputs. The estimator derives deceleration and jerk from short-term history and accounts for the expected braking response.
 
-Never mutate manual control because of collision state.
+The detector does not spawn or consume collision, obstacle, camera, or LiDAR sensors. It reports kinematic candidates only; it does not mutate manual control and is not ground-truth collision data. See `docs/kinematic_collision.md` for the decision rule and limitations.
 
 ## Sensor data contract
 

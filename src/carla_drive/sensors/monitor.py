@@ -1,8 +1,7 @@
-"""Rear mirror, LiDAR, parking-distance, and collision observation sensors."""
+"""Rear mirror, LiDAR, and parking-distance dashboard sensors."""
 
 from __future__ import annotations
 
-import logging
 import math
 import threading
 import time
@@ -13,9 +12,6 @@ import numpy as np
 from carla_drive.camera.rig import LatestImage
 from carla_drive.config import AppConfig
 from carla_drive.domain import RearDistanceState
-
-LOG = logging.getLogger(__name__)
-
 
 class MonitorSensors:
     """Owns dashboard-only sensors; none of these callbacks affect vehicle control."""
@@ -37,7 +33,6 @@ class MonitorSensors:
             self._create_lidar()
         if config.rear_parking.enabled:
             self._create_rear_obstacles()
-        self._create_collision_observer()
 
     def _spawn_sensor(self, blueprint_id: str, transform: carla.Transform) -> carla.Sensor:
         blueprint = self.session.world.get_blueprint_library().find(blueprint_id)
@@ -135,15 +130,6 @@ class MonitorSensors:
         with self._rear_lock:
             self._rear_minimum_frame = frame
             self._rear_distances.clear()
-
-    def _create_collision_observer(self) -> None:
-        sensor = self._spawn_sensor("sensor.other.collision", carla.Transform(carla.Location(z=0.8)))
-        sensor.listen(self._on_collision)
-
-    @staticmethod
-    def _on_collision(event: carla.CollisionEvent) -> None:
-        other = getattr(event, "other_actor", None)
-        LOG.info("Collision observed with %s at frame %s", getattr(other, "type_id", "world object"), event.frame)
 
     def latest_mirror(self) -> tuple[np.ndarray | None, float]:
         return self.mirror.read()
