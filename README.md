@@ -17,7 +17,7 @@ Install the test extra when developing: `python -m pip install -e ".[test]"`, th
 
 The CARLA Python API is supplied by the matching CARLA installation and is intentionally not downloaded as a generic PyPI dependency. If the app cannot connect, check that the server is running and that `carla.host`, `carla.port`, and `carla.timeout_seconds` match it.
 
-The setup screen scans installed Town maps and four-wheel vehicles before opening. It starts with zero NPCs and shows map, weather, vehicle, and time-of-day choices in dropdowns. Time of day adjusts the sun angle while preserving the selected weather preset. Click a dropdown to choose an item; for keyboard use, move with Up/Down, adjust with Left/Right, and press Space to open a dropdown. Press Enter or click **Start Driving** to begin. The GitHub button opens [@ArvinNotDev](https://github.com/ArvinNotDev/).
+The setup screen scans installed Town maps and four-wheel vehicles before opening. It starts with zero NPCs and shows map, weather, vehicle, and time-of-day choices in dropdowns. Time of day adjusts the sun angle while preserving the selected weather preset. Click a dropdown to choose an item; for keyboard use, move with Up/Down, adjust with Left/Right, and press Space to open a dropdown. Use **Controller** before or during a session to tune steering, pedal curves/deadzones, axis assignments, and button/D-pad mappings. Press Enter or click **Start Driving** to begin. The GitHub button opens [@ArvinNotDev](https://github.com/ArvinNotDev/).
 
 For an API/controller check without spawning vehicles:
 
@@ -43,12 +43,14 @@ The current fixed layout supports windows of at least 1024×700 pixels; invalid 
 | Pause | Configured button | P |
 | Left / right indicator | D-pad left / right | Z / X |
 | Headlight mode (low → high → off) | D-pad up | H |
+| Clear indicators | D-pad down | — |
+| Controller settings | Options / Start | O |
 | Pause menu | — | Esc |
 | Exit | — | Window close |
 
-Controller axis indices and trigger resting/full values vary by driver. Run `--controller-debug`, move each control, and tune the indices and `trigger_rest_value` / `trigger_full_value` in the YAML. The defaults are a starting mapping, not a claim that every Xbox driver reports identical axes.
+Controller preferences can be edited from the setup screen or the Esc menu and are saved to the user configuration directory (`%APPDATA%/CARLA Drive/controller-settings.json` on Windows). The settings screen supports steering sensitivity, steering/pedal deadzones and response curves, smoothing, inversion, axis binding, trigger calibration, D-pad mode, and button rebinding. Press Options/Start in a session to open it directly. Run `--controller-debug` if automatic axis binding does not identify a device correctly.
 
-The only application sound is the reverse parking beep; the pause menu's speaker button mutes or unmutes that beep. The other pause actions return to session setup or resume driving. Keyboard actions also work while a controller is connected. The default synchronous simulation rate is 30 Hz, rendering is capped at 60 FPS, and LiDAR runs at 10 Hz with a bounded display point cloud to reduce stutter. Collision warnings are visual only and appear at or above `safety.minimum_impact_score` (default 0.80).
+The only application sound is the reverse parking beep; the pause menu's speaker button mutes or unmutes that beep. The other pause actions open controller settings, return to session setup, or resume driving. Keyboard actions also work while a controller is connected. The default synchronous simulation rate is 30 Hz, rendering is capped at 60 FPS, and LiDAR partial scans are accumulated in the moving sensor frame for a short configurable persistence window (`lidar.persistence_seconds`) to keep its visualization continuous. Collision warnings are visual only and appear at or above `safety.minimum_impact_score` (default 0.80).
 
 ## What this project is
 
