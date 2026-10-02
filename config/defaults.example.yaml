@@ -5,12 +5,12 @@ carla:
   traffic_manager_port: 8000
   timeout_seconds: 10.0
   synchronous_mode: true
-  fixed_delta_seconds: 0.0166667
+  fixed_delta_seconds: 0.0333333
 
 window:
   width: 1280
   height: 720
-  render_fps: 90
+  render_fps: 60
 
 session:
   map_name: null
@@ -49,9 +49,9 @@ lidar:
   channels: 32
   range_m: 45.0 # Physical sensor range.
   display_range_m: 32.0 # Top-down zoom range; does not shorten the sensor range.
-  points_per_second: 120000
-  rotation_frequency_hz: 20.0
-  display_points: 3000
+  points_per_second: 60000
+  rotation_frequency_hz: 10.0
+  display_points: 1000
   upper_fov: 10.0
   lower_fov: -30.0
 
