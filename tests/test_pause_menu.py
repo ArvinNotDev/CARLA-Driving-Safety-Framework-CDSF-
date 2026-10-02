@@ -30,7 +30,7 @@ def test_pause_menu_reverse_beep_toggle_and_actions():
     assert menu._activate("menu") == "menu"
     assert menu._activate("resume") == "resume"
     menu._draw()
-    assert len(menu.buttons) == 3
+    assert len(menu.buttons) == 4
 
 
 def test_launcher_includes_time_of_day_in_session_config():
