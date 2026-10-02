@@ -1,4 +1,4 @@
-"""In-drive pause menu with audio, session setup, and resume actions."""
+"""In-drive pause menu with reverse-beep, session setup, and resume actions."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import pygame
 
 
 class PauseMenu:
-    ACTIONS = ("audio", "menu", "resume")
+    ACTIONS = ("reverse_beep", "menu", "resume")
 
-    def __init__(self, screen: pygame.Surface, audio):
+    def __init__(self, screen: pygame.Surface, reverse_beep):
         self.screen = screen
-        self.audio = audio
+        self.reverse_beep = reverse_beep
         self.clock = pygame.time.Clock()
         self.title_font = pygame.font.SysFont("Segoe UI", 34, bold=True)
         self.body_font = pygame.font.SysFont("Segoe UI", 18)
@@ -33,7 +33,7 @@ class PauseMenu:
                     elif event.key in (pygame.K_DOWN, pygame.K_s):
                         self.focus = (self.focus + 1) % len(self.ACTIONS)
                     elif event.key == pygame.K_m:
-                        self.audio.toggle_muted()
+                        self.reverse_beep.toggle_muted()
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                         result = self._activate(self.ACTIONS[self.focus])
                         if result:
@@ -53,11 +53,9 @@ class PauseMenu:
             self.clock.tick(60)
 
     def _activate(self, action: str) -> str | None:
-        if action == "audio":
-            self.audio.toggle_muted()
-            self.audio.play_ui()
+        if action == "reverse_beep":
+            self.reverse_beep.toggle_muted()
             return None
-        self.audio.play_ui()
         if action == "menu":
             return "menu"
         return "resume"
@@ -75,11 +73,11 @@ class PauseMenu:
         self.screen.blit(subtitle, subtitle.get_rect(center=(width // 2, card.y + 92)))
 
         labels = (
-            "Unmute audio" if self.audio.muted else "Mute audio",
+            "Unmute reverse beep" if self.reverse_beep.muted else "Mute reverse beep",
             "Return to session setup",
             "Resume driving",
         )
-        icons = ("🔇" if self.audio.muted else "🔊", "↩", "▶")
+        icons = ("🔇" if self.reverse_beep.muted else "🔊", "↩", "▶")
         self.buttons = []
         for index, (action, label, icon) in enumerate(zip(self.ACTIONS, labels, icons)):
             rect = pygame.Rect(card.x + 42, card.y + 130 + index * 74, card.w - 84, 58)
