@@ -71,7 +71,8 @@ class LidarConfig:
     display_range_m: float = 32.0
     points_per_second: int = 60_000
     rotation_frequency_hz: float = 10.0
-    display_points: int = 1_000
+    display_points: int = 2_500
+    persistence_seconds: float = 0.35
     upper_fov: float = 10.0
     lower_fov: float = -30.0
 
@@ -112,6 +113,7 @@ class ControllerConfig:
     steering_axis_inverted: bool = False
     throttle_axis: int = 5
     brake_axis: int = 4
+    steering_sensitivity: float = 1.0
     steering_deadzone: float = 0.06
     trigger_deadzone: float = 0.04
     steering_response: float = 1.35
@@ -127,7 +129,13 @@ class ControllerConfig:
     reset_button: int = 3
     pause_button: int = 7
     horn_button: int = 9
+    settings_button: int = -1
+    dpad_mode: str = "auto"
     dpad_hat: int = 0
+    dpad_left_button: int = 13
+    dpad_right_button: int = 14
+    dpad_up_button: int = 11
+    dpad_down_button: int = 12
     require_stop_for_reverse: bool = True
     reverse_stop_speed_mps: float = 0.8
 
@@ -237,7 +245,7 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Controller joystick_index cannot be negative.")
     if not 0 <= controller.steering_deadzone < 1 or not 0 <= controller.trigger_deadzone < 1:
         raise ValueError("Controller deadzones must be in the range [0, 1).")
-    if min(controller.steering_response, controller.throttle_response, controller.brake_response) <= 0:
+    if min(controller.steering_sensitivity, controller.steering_response, controller.throttle_response, controller.brake_response) <= 0:
         raise ValueError("Controller response curves must be positive.")
     if not 0 <= controller.steering_smoothing <= 1:
         raise ValueError("steering_smoothing must be in the range [0, 1].")
@@ -251,6 +259,12 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Controller button indices cannot be negative.")
     if controller.dpad_hat < 0:
         raise ValueError("Controller dpad_hat cannot be negative.")
+    if controller.settings_button < -1:
+        raise ValueError("Controller settings_button must be -1 or a button index.")
+    if min(controller.dpad_left_button, controller.dpad_right_button, controller.dpad_up_button, controller.dpad_down_button) < 0:
+        raise ValueError("Controller D-pad button indices cannot be negative.")
+    if controller.dpad_mode not in {"auto", "hat", "buttons"}:
+        raise ValueError("Controller dpad_mode must be auto, hat, or buttons.")
     if controller.reverse_stop_speed_mps < 0:
         raise ValueError("reverse_stop_speed_mps cannot be negative.")
     parking = config.rear_parking
@@ -270,6 +284,8 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("LiDAR display_range_m must be positive and, when enabled, no greater than range_m.")
     if config.lidar.enabled and config.lidar.rotation_frequency_hz <= 0:
         raise ValueError("Enabled LiDAR rotation_frequency_hz must be positive.")
+    if config.lidar.enabled and config.lidar.persistence_seconds <= 0:
+        raise ValueError("Enabled LiDAR persistence_seconds must be positive.")
     if config.lidar.enabled and not -90 <= config.lidar.lower_fov < config.lidar.upper_fov <= 90:
         raise ValueError("Enabled LiDAR FOV must satisfy -90 <= lower_fov < upper_fov <= 90.")
     safety = config.safety
