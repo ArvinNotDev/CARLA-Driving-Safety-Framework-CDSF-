@@ -205,6 +205,9 @@ class CarlaSession:
             for blueprint in library.filter("vehicle.*")
             if blueprint.has_attribute("number_of_wheels") and int(blueprint.get_attribute("number_of_wheels")) == 4
         ]
+        if not blueprints:
+            LOG.warning("This CARLA map exposes no four-wheel traffic blueprints.")
+            return 0
         spawn_points = list(self.world.get_map().get_spawn_points())
         random.Random(random_seed + 1).shuffle(spawn_points)
         spawned = 0

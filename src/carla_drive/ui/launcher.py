@@ -86,6 +86,8 @@ class Launcher:
 
     def run(self) -> SessionConfig | None:
         pygame.display.set_caption("CARLA Drive | Session Setup")
+        self._draw()
+        pygame.display.flip()
         while True:
             self.clock.tick(60)
             for event in pygame.event.get():
@@ -97,6 +99,8 @@ class Launcher:
                         return result
                 elif event.type == pygame.MOUSEWHEEL:
                     self._scroll_dropdown(event.y)
+                elif event.type == pygame.MOUSEMOTION:
+                    self._hover_dropdown(event.pos)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     result = self._click(event.pos)
                     if result is not _CONTINUE:
@@ -117,6 +121,10 @@ class Launcher:
                 self._move_dropdown(-len(self._options(self.open_dropdown)))
             elif key == pygame.K_END:
                 self._move_dropdown(len(self._options(self.open_dropdown)))
+            elif key == pygame.K_PAGEUP:
+                self._move_dropdown(-max(1, len(self.dropdown_option_rects)))
+            elif key == pygame.K_PAGEDOWN:
+                self._move_dropdown(max(1, len(self.dropdown_option_rects)))
             elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self._select_dropdown_item()
             return _CONTINUE
@@ -177,6 +185,9 @@ class Launcher:
         self.open_dropdown = field
         self.menu_highlight = self.selected[field]
         self.menu_scroll = max(0, self.menu_highlight - 4)
+        self._layout_dropdown(self.screen.get_height())
+        self._keep_highlight_visible()
+        self._layout_dropdown(self.screen.get_height())
 
     def _options(self, field: str) -> list[str]:
         if field == "map":
@@ -189,6 +200,7 @@ class Launcher:
         count = len(self._options(self.open_dropdown or "map"))
         self.menu_highlight = max(0, min(count - 1, self.menu_highlight + direction))
         self._keep_highlight_visible()
+        self._layout_dropdown(self.screen.get_height())
 
     def _keep_highlight_visible(self) -> None:
         visible_count = max(1, len(self.dropdown_option_rects))
@@ -205,7 +217,20 @@ class Launcher:
     def _scroll_dropdown(self, direction: int) -> None:
         if self.open_dropdown is None or not self.dropdown_rect.collidepoint(pygame.mouse.get_pos()):
             return
-        self._move_dropdown(-direction)
+        visible_count = max(1, len(self.dropdown_option_rects))
+        max_scroll = max(0, len(self._options(self.open_dropdown)) - visible_count)
+        self.menu_scroll = max(0, min(max_scroll, self.menu_scroll - direction))
+        self.menu_highlight = max(self.menu_scroll, min(self.menu_scroll + visible_count - 1, self.menu_highlight))
+        self._layout_dropdown(self.screen.get_height())
+        self._hover_dropdown(pygame.mouse.get_pos())
+
+    def _hover_dropdown(self, position: tuple[int, int]) -> None:
+        if self.open_dropdown is None:
+            return
+        for option_index, rect in self.dropdown_option_rects:
+            if rect.collidepoint(position):
+                self.menu_highlight = option_index
+                break
 
     def _change(self, direction: int, count_step: int = 5, focused: int | None = None) -> None:
         index = self.focus if focused is None else focused
@@ -398,7 +423,7 @@ class Launcher:
             ],
         )
 
-    def _draw_dropdown(self, height: int) -> None:
+    def _layout_dropdown(self, height: int) -> None:
         if self.open_dropdown is None:
             return
         field_index = ("map", "weather", "vehicle").index(self.open_dropdown)
@@ -409,22 +434,18 @@ class Launcher:
         item_height = 38
         padding = 6
         available_height = height - 89 - (anchor.bottom + 7)
+        space_above = anchor.top - 7 - 145
+        open_above = available_height < min(6, len(options)) * item_height + padding * 2 and space_above > available_height
+        if open_above:
+            available_height = space_above
         visible_count = max(1, min(6, len(options), (available_height - padding * 2) // item_height))
         menu_height = visible_count * item_height + padding * 2
-        menu_y = anchor.bottom + 7
+        menu_y = anchor.top - 7 - menu_height if open_above else anchor.bottom + 7
         self.dropdown_rect = pygame.Rect(anchor.x, menu_y, anchor.w, menu_height)
-        pygame.draw.rect(self.screen, (10, 23, 35), self.dropdown_rect, border_radius=12)
-        pygame.draw.rect(self.screen, (53, 99, 111), self.dropdown_rect, width=1, border_radius=12)
 
         max_scroll = max(0, len(options) - visible_count)
         self.menu_scroll = max(0, min(max_scroll, self.menu_scroll))
-        if self.menu_highlight < self.menu_scroll:
-            self.menu_scroll = self.menu_highlight
-        elif self.menu_highlight >= self.menu_scroll + visible_count:
-            self.menu_scroll = self.menu_highlight - visible_count + 1
-
         self.dropdown_option_rects = []
-        mouse = pygame.mouse.get_pos()
         for visible_index in range(visible_count):
             option_index = self.menu_scroll + visible_index
             rect = pygame.Rect(
@@ -435,13 +456,13 @@ class Launcher:
             )
             self.dropdown_option_rects.append((option_index, rect))
 
-        hovered_index = next(
-            (option_index for option_index, rect in self.dropdown_option_rects if rect.collidepoint(mouse)),
-            None,
-        )
-        if hovered_index is not None:
-            self.menu_highlight = hovered_index
-
+    def _draw_dropdown(self, height: int) -> None:
+        self._layout_dropdown(height)
+        if self.open_dropdown is None:
+            return
+        options = self._options(self.open_dropdown)
+        pygame.draw.rect(self.screen, (10, 23, 35), self.dropdown_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (53, 99, 111), self.dropdown_rect, width=1, border_radius=12)
         for option_index, rect in self.dropdown_option_rects:
             option = options[option_index]
             if option_index == self.menu_highlight:

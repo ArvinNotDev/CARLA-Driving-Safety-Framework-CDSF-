@@ -93,9 +93,9 @@ class EgoLightState:
             state |= light_flags.Reverse
 
         self._cached_enum = light_flags
-        self._cached_state = state
+        self._cached_state = light_flags(int(state))
         self._cached_revision = self._revision
-        return state
+        return self._cached_state
 
     def _invalidate(self) -> None:
         self._revision += 1

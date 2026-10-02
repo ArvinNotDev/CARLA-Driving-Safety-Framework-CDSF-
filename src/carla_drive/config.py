@@ -157,11 +157,13 @@ def load_config(path: str | Path) -> AppConfig:
     """Load YAML settings, using dataclass defaults for omitted values."""
     config_path = Path(path)
     try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise ValueError(f"Cannot read configuration '{config_path}': {exc}") from exc
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML in '{config_path}': {exc}") from exc
+    if raw is None:
+        raw = {}
     if not isinstance(raw, dict):
         raise ValueError("The configuration root must be a mapping.")
 
@@ -188,6 +190,23 @@ def load_config(path: str | Path) -> AppConfig:
 
 def validate_config(config: AppConfig) -> None:
     """Reject invalid ranges before connecting to CARLA."""
+    for section_field in fields(config):
+        section = getattr(config, section_field.name)
+        for setting in fields(section):
+            value = getattr(section, setting.name)
+            name = f"{section_field.name}.{setting.name}"
+            if setting.type == "bool":
+                valid = isinstance(value, bool)
+            elif setting.type == "int":
+                valid = type(value) is int
+            elif setting.type == "float":
+                valid = type(value) in (int, float) and isfinite(value)
+            elif setting.type == "str":
+                valid = isinstance(value, str)
+            else:
+                valid = value is None or isinstance(value, str)
+            if not valid:
+                raise ValueError(f"Configuration setting '{name}' must be {setting.type} (finite for numbers).")
     if not config.carla.host.strip():
         raise ValueError("CARLA host cannot be empty.")
     for name, value in (("CARLA port", config.carla.port), ("Traffic Manager port", config.carla.traffic_manager_port)):
@@ -195,8 +214,8 @@ def validate_config(config: AppConfig) -> None:
             raise ValueError(f"{name} must be between 1 and 65535.")
     if config.carla.timeout_seconds <= 0:
         raise ValueError("CARLA timeout_seconds must be positive.")
-    if config.carla.synchronous_mode and not 0 < config.carla.fixed_delta_seconds <= 0.1:
-        raise ValueError("Synchronous fixed_delta_seconds must be greater than 0 and at most 0.1.")
+    if not 0 < config.carla.fixed_delta_seconds <= 0.1:
+        raise ValueError("fixed_delta_seconds must be greater than 0 and at most 0.1, including for pause mode.")
     if config.window.width < 1024 or config.window.height < 700 or config.window.render_fps <= 0:
         raise ValueError("The dashboard requires at least a 1024x700 window and a positive render_fps.")
     if min(config.camera.width, config.camera.height, config.camera.mirror_width, config.camera.mirror_height) <= 0:
@@ -208,6 +227,8 @@ def validate_config(config: AppConfig) -> None:
     if max(config.session.traffic_vehicles, config.session.pedestrians) > 200:
         raise ValueError("Traffic and pedestrian counts cannot exceed 200 in the launcher.")
     controller = config.controller
+    if controller.joystick_index < 0:
+        raise ValueError("Controller joystick_index cannot be negative.")
     if not 0 <= controller.steering_deadzone < 1 or not 0 <= controller.trigger_deadzone < 1:
         raise ValueError("Controller deadzones must be in the range [0, 1).")
     if min(controller.steering_response, controller.throttle_response, controller.brake_response) <= 0:
@@ -239,8 +260,12 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Enabled LiDAR must use positive channels and point counts.")
     if config.lidar.enabled and config.lidar.range_m <= 0:
         raise ValueError("Enabled LiDAR range_m must be positive.")
-    if config.lidar.enabled and not 0 < config.lidar.display_range_m <= config.lidar.range_m:
-        raise ValueError("Enabled LiDAR display_range_m must be positive and no greater than range_m.")
+    if config.lidar.display_range_m <= 0 or (config.lidar.enabled and config.lidar.display_range_m > config.lidar.range_m):
+        raise ValueError("LiDAR display_range_m must be positive and, when enabled, no greater than range_m.")
+    if config.lidar.enabled and config.lidar.rotation_frequency_hz <= 0:
+        raise ValueError("Enabled LiDAR rotation_frequency_hz must be positive.")
+    if config.lidar.enabled and not -90 <= config.lidar.lower_fov < config.lidar.upper_fov <= 90:
+        raise ValueError("Enabled LiDAR FOV must satisfy -90 <= lower_fov < upper_fov <= 90.")
     safety = config.safety
     safety_thresholds = (
         safety.minimum_speed_mps,
