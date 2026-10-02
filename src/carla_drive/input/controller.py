@@ -53,6 +53,39 @@ def dpad_pressed(previous: tuple[int, int], current: tuple[int, int]) -> frozens
     return frozenset(pressed)
 
 
+KEYBOARD_ACTION_KEYS = {
+    pygame.K_r: "reverse",
+    pygame.K_c: "camera_next",
+    pygame.K_q: "camera_previous",
+    pygame.K_BACKSPACE: "reset",
+    pygame.K_p: "pause",
+    pygame.K_z: "indicator_left",
+    pygame.K_x: "indicator_right",
+    pygame.K_h: "headlight_cycle",
+}
+
+
+def keyboard_action_edges(
+    previous_down: set[int], events: Iterable[pygame.event.Event]
+) -> tuple[frozenset[str], set[int]]:
+    """Translate keyboard action presses into one-shot actions, ignoring repeats."""
+    down = set(previous_down)
+    pressed = set()
+    focus_lost = getattr(pygame, "WINDOWFOCUSLOST", None)
+    for event in events:
+        if focus_lost is not None and event.type == focus_lost:
+            down.clear()
+        elif event.type == pygame.KEYUP:
+            down.discard(event.key)
+        elif event.type == pygame.KEYDOWN:
+            if event.key not in down:
+                action = KEYBOARD_ACTION_KEYS.get(event.key)
+                if action:
+                    pressed.add(action)
+                down.add(event.key)
+    return frozenset(pressed), down
+
+
 class ControllerReader:
     """Samples one configured joystick and returns normalized manual controls."""
 
@@ -72,6 +105,9 @@ class ControllerReader:
         self._previous_buttons: dict[str, bool] = {}
         self._previous_hat = (0, 0)
         self._previous_steering = 0.0
+        self._keyboard_keys_down: set[int] = set()
+        self._keyboard_pressed = frozenset()
+        self._keyboard_focused = True
         self._mapping_warning = False
         self._input_baseline_pending = True
         self._disconnected_this_sample = False
@@ -129,6 +165,14 @@ class ControllerReader:
     def sample(self, events: Iterable[pygame.event.Event]) -> ControlInput:
         self._disconnected_this_sample = False
         events = tuple(events)
+        self._keyboard_pressed, self._keyboard_keys_down = keyboard_action_edges(self._keyboard_keys_down, events)
+        focus_lost = getattr(pygame, "WINDOWFOCUSLOST", None)
+        focus_gained = getattr(pygame, "WINDOWFOCUSGAINED", None)
+        for event in events:
+            if focus_lost is not None and event.type == focus_lost:
+                self._keyboard_focused = False
+            elif focus_gained is not None and event.type == focus_gained:
+                self._keyboard_focused = True
         for event in events:
             if event.type == pygame.JOYDEVICEREMOVED and self.joystick and event.instance_id == self.joystick.get_instance_id():
                 self._disconnect()
@@ -143,14 +187,14 @@ class ControllerReader:
                             LOG.warning("Controller has %d axes, but axis %d is configured. Using keyboard; inspect --controller-debug and edit the YAML mapping.", self.joystick.get_numaxes(), required)
                             self._mapping_warning = True
                         self.keyboard_fallback = True
-                        return self._with_disconnect_marker(self._sample_keyboard(events))
+                        return self._with_disconnect_marker(self._sample_keyboard())
                 self.keyboard_fallback = False
                 return self._with_disconnect_marker(self._sample_joystick())
             except pygame.error:
                 self._disconnect()
         if self.joystick:
             self._disconnect()
-        return self._with_disconnect_marker(self._sample_keyboard(events))
+        return self._with_disconnect_marker(self._sample_keyboard())
 
     def _with_disconnect_marker(self, control: ControlInput) -> ControlInput:
         if self._disconnected_this_sample:
@@ -204,25 +248,15 @@ class ControllerReader:
     def _button(self, index: int) -> bool:
         return 0 <= index < self.joystick.get_numbuttons() and bool(self.joystick.get_button(index))
 
-    def _sample_keyboard(self, events: Iterable[pygame.event.Event]) -> ControlInput:
+    def _sample_keyboard(self) -> ControlInput:
+        if not self._keyboard_focused:
+            return ControlInput()
         keys = pygame.key.get_pressed()
         steering = float(keys[pygame.K_d]) - float(keys[pygame.K_a])
         throttle = float(keys[pygame.K_w] or keys[pygame.K_UP])
         brake = float(keys[pygame.K_s] or keys[pygame.K_DOWN])
-        keys_for_actions = {
-            "reverse": pygame.K_r,
-            "camera_next": pygame.K_c,
-            "camera_previous": pygame.K_q,
-            "handbrake": pygame.K_SPACE,
-            "reset": pygame.K_BACKSPACE,
-            "pause": pygame.K_p,
-        }
-        pressed = frozenset(
-            action
-            for action, key in keys_for_actions.items()
-            if any(event.type == pygame.KEYDOWN and event.key == key for event in events)
-        )
-        return ControlInput(steering, throttle, brake, bool(keys[pygame.K_SPACE]), pressed)
+        handbrake = bool(keys[pygame.K_SPACE])
+        return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed)
 
     def close(self) -> None:
         if self.joystick:
