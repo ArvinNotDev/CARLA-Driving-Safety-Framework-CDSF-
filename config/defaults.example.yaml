@@ -5,16 +5,17 @@ carla:
   traffic_manager_port: 8000
   timeout_seconds: 10.0
   synchronous_mode: true
-  fixed_delta_seconds: 0.05
+  fixed_delta_seconds: 0.0166667
 
 window:
   width: 1280
   height: 720
-  render_fps: 60
+  render_fps: 90
 
 session:
   map_name: null
   weather_preset: ClearNoon
+  time_of_day: Noon
   vehicle_blueprint: null
   traffic_vehicles: 0
   pedestrians: 0
@@ -77,6 +78,7 @@ safety:
   jerk_threshold_mps3: 75.0
   confirmation_window_seconds: 0.12
   cooldown_seconds: 0.75
+  minimum_impact_score: 0.8
 
 controller:
   joystick_index: 0
