@@ -10,6 +10,7 @@ from typing import Any
 import carla
 
 from carla_drive.config import AppConfig
+from carla_drive.carla.lights import EgoLightState
 
 LOG = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class CarlaSession:
         self.sensors: list[carla.Sensor] = []
         self.walker_controllers: list[carla.Actor] = []
         self.ego_vehicle: carla.Vehicle | None = None
+        self._last_ego_light_state: carla.VehicleLightState | None = None
         self.initial_ego_transform: carla.Transform | None = None
         self._traffic_manager_touched = False
         self._closed = False
@@ -187,6 +189,7 @@ class CarlaSession:
             vehicle = self.world.try_spawn_actor(blueprint, transform)
             if vehicle is not None:
                 self.ego_vehicle = vehicle
+                self._last_ego_light_state = None
                 self.initial_ego_transform = transform
                 self.track_actor(vehicle)
                 LOG.info("Spawned ego vehicle %s", selected)
@@ -298,7 +301,15 @@ class CarlaSession:
         self.traffic_manager.set_synchronous_mode(settings.synchronous_mode)
         self._traffic_manager_touched = True
 
-    def apply_control(self, steering: float, throttle: float, brake: float, reverse: bool, handbrake: bool) -> None:
+    def apply_control(
+        self,
+        steering: float,
+        throttle: float,
+        brake: float,
+        reverse: bool,
+        handbrake: bool,
+        lights: EgoLightState,
+    ) -> None:
         if self.ego_vehicle is None:
             return
         control = carla.VehicleControl(
@@ -309,6 +320,10 @@ class CarlaSession:
             hand_brake=handbrake,
         )
         self.ego_vehicle.apply_control(control)
+        light_state = lights.to_carla_state(carla.VehicleLightState)
+        if light_state != self._last_ego_light_state:
+            self.ego_vehicle.set_light_state(light_state)
+            self._last_ego_light_state = light_state
 
     def vehicle_speed_mps(self) -> float:
         if self.ego_vehicle is None:

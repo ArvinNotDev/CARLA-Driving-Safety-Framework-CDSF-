@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Iterable
+from dataclasses import replace
 
 import pygame
 
@@ -38,6 +39,20 @@ def normalize_trigger(raw: float, rest: float, full: float, deadzone: float, res
     return ((value - deadzone) / (1.0 - deadzone)) ** response
 
 
+def dpad_pressed(previous: tuple[int, int], current: tuple[int, int]) -> frozenset[str]:
+    """Return D-pad actions only for axes that have just moved into a direction."""
+    previous_x, previous_y = previous
+    current_x, current_y = current
+    pressed = set()
+    if current_x == -1 and previous_x != -1:
+        pressed.add("indicator_left")
+    if current_x == 1 and previous_x != 1:
+        pressed.add("indicator_right")
+    if current_y == 1 and previous_y != 1:
+        pressed.add("headlight_cycle")
+    return frozenset(pressed)
+
+
 class ControllerReader:
     """Samples one configured joystick and returns normalized manual controls."""
 
@@ -48,14 +63,18 @@ class ControllerReader:
         "handbrake": "handbrake_button",
         "reset": "reset_button",
         "pause": "pause_button",
+        "horn": "horn_button",
     }
 
     def __init__(self, config: ControllerConfig):
         self.config = config
         self.joystick: pygame.joystick.JoystickType | None = None
         self._previous_buttons: dict[str, bool] = {}
+        self._previous_hat = (0, 0)
         self._previous_steering = 0.0
         self._mapping_warning = False
+        self._input_baseline_pending = True
+        self._disconnected_this_sample = False
         self.keyboard_fallback = True
         pygame.joystick.init()
         self._connect()
@@ -70,7 +89,9 @@ class ControllerReader:
         self.joystick = joystick
         self._mapping_warning = False
         self._previous_buttons.clear()
+        self._previous_hat = (0, 0)
         self._previous_steering = 0.0
+        self._input_baseline_pending = True
         self.keyboard_fallback = False
         LOG.info("Controller connected: %s (%d axes, %d buttons)", joystick.get_name(), joystick.get_numaxes(), joystick.get_numbuttons())
 
@@ -96,7 +117,17 @@ class ControllerReader:
             self._disconnect()
             return []
 
+    def raw_hats(self) -> list[tuple[int, int]]:
+        if not self.joystick:
+            return []
+        try:
+            return [self.joystick.get_hat(index) for index in range(self.joystick.get_numhats())]
+        except pygame.error:
+            self._disconnect()
+            return []
+
     def sample(self, events: Iterable[pygame.event.Event]) -> ControlInput:
+        self._disconnected_this_sample = False
         events = tuple(events)
         for event in events:
             if event.type == pygame.JOYDEVICEREMOVED and self.joystick and event.instance_id == self.joystick.get_instance_id():
@@ -112,17 +143,23 @@ class ControllerReader:
                             LOG.warning("Controller has %d axes, but axis %d is configured. Using keyboard; inspect --controller-debug and edit the YAML mapping.", self.joystick.get_numaxes(), required)
                             self._mapping_warning = True
                         self.keyboard_fallback = True
-                        return self._sample_keyboard(events)
-                    self.keyboard_fallback = False
-                    return self._sample_joystick()
+                        return self._with_disconnect_marker(self._sample_keyboard(events))
+                self.keyboard_fallback = False
+                return self._with_disconnect_marker(self._sample_joystick())
             except pygame.error:
                 self._disconnect()
         if self.joystick:
             self._disconnect()
-        return self._sample_keyboard(events)
+        return self._with_disconnect_marker(self._sample_keyboard(events))
+
+    def _with_disconnect_marker(self, control: ControlInput) -> ControlInput:
+        if self._disconnected_this_sample:
+            return replace(control, pressed=control.pressed | {"controller_disconnected"})
+        return control
 
     def _disconnect(self) -> None:
         if self.joystick:
+            self._disconnected_this_sample = True
             LOG.warning("Controller disconnected; switching to keyboard controls.")
             try:
                 self.joystick.quit()
@@ -131,6 +168,7 @@ class ControllerReader:
             self.joystick = None
             self.keyboard_fallback = True
             self._previous_buttons.clear()
+            self._previous_hat = (0, 0)
             self._previous_steering = 0.0
 
     def _sample_joystick(self) -> ControlInput:
@@ -150,9 +188,18 @@ class ControllerReader:
         throttle = normalize_trigger(throttle_raw, response=self.config.throttle_response, **kwargs)
         brake = normalize_trigger(brake_raw, response=self.config.brake_response, **kwargs)
         current = {action: self._button(getattr(self.config, field)) for action, field in self.ACTION_BUTTONS.items()}
-        pressed = frozenset(action for action, down in current.items() if down and not self._previous_buttons.get(action, False))
+        hat = (0, 0)
+        if self.config.dpad_hat < self.joystick.get_numhats():
+            hat = self.joystick.get_hat(self.config.dpad_hat)
+        if self._input_baseline_pending:
+            pressed = frozenset()
+            self._input_baseline_pending = False
+        else:
+            pressed = frozenset(action for action, down in current.items() if down and not self._previous_buttons.get(action, False))
+            pressed |= dpad_pressed(self._previous_hat, hat)
         self._previous_buttons = current
-        return ControlInput(steering, throttle, brake, current["handbrake"], pressed)
+        self._previous_hat = hat
+        return ControlInput(steering, throttle, brake, current["handbrake"], pressed, horn=current["horn"])
 
     def _button(self, index: int) -> bool:
         return 0 <= index < self.joystick.get_numbuttons() and bool(self.joystick.get_button(index))

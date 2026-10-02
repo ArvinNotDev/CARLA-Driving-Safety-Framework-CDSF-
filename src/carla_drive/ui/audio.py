@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import time
 
 import numpy as np
@@ -15,9 +16,14 @@ LOG = logging.getLogger(__name__)
 
 
 class ParkingBeep:
+    """Plays rear-distance beeps and a held vehicle horn through pygame audio."""
+
     def __init__(self, config: RearParkingConfig):
         self.config = config
         self.sound: pygame.mixer.Sound | None = None
+        self.horn_sound: pygame.mixer.Sound | None = None
+        self.horn_channel: pygame.mixer.Channel | None = None
+        self._horn_pressed = False
         self.last_beep_at = 0.0
         try:
             if not pygame.mixer.get_init():
@@ -33,6 +39,31 @@ class ParkingBeep:
             self.sound = pygame.sndarray.make_sound(samples)
         except (pygame.error, ValueError) as exc:
             LOG.warning("Parking beep audio is unavailable: %s", exc)
+        try:
+            horn_path = Path(__file__).resolve().parents[1] / "assets" / "car_horn.wav"
+            self.horn_sound = pygame.mixer.Sound(str(horn_path))
+        except (pygame.error, OSError) as exc:
+            LOG.warning("Vehicle horn audio is unavailable: %s", exc)
+
+    def set_horn(self, pressed: bool) -> None:
+        pressed = bool(pressed)
+        if pressed == self._horn_pressed:
+            return
+        self._horn_pressed = pressed
+        if pressed:
+            if self.horn_sound:
+                try:
+                    self.horn_channel = self.horn_sound.play(loops=-1)
+                    if self.horn_channel is None:
+                        LOG.warning("Vehicle horn could not start because no audio channel is available.")
+                except pygame.error as exc:
+                    LOG.warning("Vehicle horn could not start: %s", exc)
+        elif self.horn_channel:
+            try:
+                self.horn_channel.stop()
+            except pygame.error as exc:
+                LOG.warning("Vehicle horn could not stop cleanly: %s", exc)
+            self.horn_channel = None
 
     def update(self, reversing: bool, distance_m: float | None) -> None:
         now = time.monotonic()
@@ -51,6 +82,22 @@ class ParkingBeep:
             self.last_beep_at = now
 
     def close(self) -> None:
+        self._horn_pressed = False
+        if self.horn_channel:
+            try:
+                self.horn_channel.stop()
+            except pygame.error as exc:
+                LOG.debug("Vehicle horn channel was already unavailable during shutdown: %s", exc)
+            self.horn_channel = None
+        if self.horn_sound:
+            try:
+                self.horn_sound.stop()
+            except pygame.error as exc:
+                LOG.debug("Vehicle horn sound was already unavailable during shutdown: %s", exc)
+            self.horn_sound = None
         if self.sound:
-            self.sound.stop()
+            try:
+                self.sound.stop()
+            except pygame.error as exc:
+                LOG.debug("Parking beep was already unavailable during shutdown: %s", exc)
             self.sound = None

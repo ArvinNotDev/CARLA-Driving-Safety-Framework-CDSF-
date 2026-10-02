@@ -19,6 +19,7 @@ class ControlInput:
     brake: float = 0.0
     handbrake: bool = False
     pressed: frozenset[str] = frozenset()
+    horn: bool = False
 
 
 @dataclass(frozen=True)

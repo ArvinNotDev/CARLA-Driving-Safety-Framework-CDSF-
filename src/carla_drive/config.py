@@ -111,6 +111,8 @@ class ControllerConfig:
     handbrake_button: int = 4
     reset_button: int = 3
     pause_button: int = 7
+    horn_button: int = 9
+    dpad_hat: int = 0
     require_stop_for_reverse: bool = True
     reverse_stop_speed_mps: float = 0.8
 
@@ -203,8 +205,10 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Trigger rest/full values must be between -1 and 1.")
     if min(controller.steering_axis, controller.throttle_axis, controller.brake_axis) < 0:
         raise ValueError("Controller axis indices cannot be negative.")
-    if min(controller.reverse_button, controller.camera_next_button, controller.camera_previous_button, controller.handbrake_button, controller.reset_button, controller.pause_button) < 0:
+    if min(controller.reverse_button, controller.camera_next_button, controller.camera_previous_button, controller.handbrake_button, controller.reset_button, controller.pause_button, controller.horn_button) < 0:
         raise ValueError("Controller button indices cannot be negative.")
+    if controller.dpad_hat < 0:
+        raise ValueError("Controller dpad_hat cannot be negative.")
     if controller.reverse_stop_speed_mps < 0:
         raise ValueError("reverse_stop_speed_mps cannot be negative.")
     parking = config.rear_parking

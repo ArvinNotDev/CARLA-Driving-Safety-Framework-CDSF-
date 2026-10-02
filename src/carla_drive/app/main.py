@@ -11,6 +11,7 @@ from pathlib import Path
 import pygame
 
 from carla_drive.camera.rig import CameraRig
+from carla_drive.carla.lights import EgoLightState
 from carla_drive.carla.session import CarlaSession, discover_weather_presets
 from carla_drive.config import AppConfig, load_config
 from carla_drive.domain import CameraMode, DrivingSnapshot
@@ -128,6 +129,7 @@ def _show_startup_status(screen: pygame.Surface, title: str, detail: str) -> Non
 def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> None:
     clock = pygame.time.Clock()
     reverse = False
+    lights = EgoLightState()
     paused = False
     running = True
     status = ""
@@ -154,6 +156,10 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
         if not running:
             break
         control = controller.sample(events)
+        if "controller_disconnected" in control.pressed:
+            lights.clear_indicators()
+            status = "Controller disconnected; indicators off"
+            status_until = time.monotonic() + 2.0
         if "camera_next" in control.pressed:
             camera.next_mode(1)
         if "camera_previous" in control.pressed:
@@ -166,6 +172,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             session.reset_ego()
             sensors.clear_rear()
             reverse = False
+            lights.clear_indicators()
             status = "Vehicle reset to its starting position"
             status_until = time.monotonic() + 2.5
         if "reverse" in control.pressed:
@@ -177,14 +184,27 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
                 status = "Stop before changing direction"
             status_until = time.monotonic() + 2.0
 
+        for side, action in (("left", "indicator_left"), ("right", "indicator_right")):
+            if action in control.pressed:
+                enabled = lights.toggle_indicator(side)
+                status = f"{side.title()} indicator {'on' if enabled else 'off'}"
+                status_until = time.monotonic() + 1.5
+        if "headlight_cycle" in control.pressed:
+            mode = lights.cycle_headlights()
+            status = f"Headlights: {mode.value}"
+            status_until = time.monotonic() + 1.5
+        lights.set_reverse(reverse)
+
         now = time.monotonic()
         if now > status_until:
             status = ""
         if paused:
-            session.apply_control(0.0, 0.0, 1.0, reverse, True)
+            lights.set_brake_input(1.0)
+            session.apply_control(0.0, 0.0, 1.0, reverse, True, lights)
             applied_steering, applied_throttle, applied_brake = 0.0, 0.0, 1.0
         else:
-            session.apply_control(control.steering, control.throttle, control.brake, reverse, control.handbrake)
+            lights.set_brake_input(control.brake)
+            session.apply_control(control.steering, control.throttle, control.brake, reverse, control.handbrake, lights)
             applied_steering, applied_throttle, applied_brake = control.steering, control.throttle, control.brake
             if config.carla.synchronous_mode and now >= next_tick_at:
                 session.tick()
@@ -193,6 +213,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
         rear = sensors.rear_distance(now)
         vehicle = session.snapshot(applied_steering, applied_throttle, applied_brake, reverse)
         snapshot = DrivingSnapshot(vehicle=vehicle, rear_distance=rear, camera_mode=camera.mode)
+        audio.set_horn(control.horn and not paused)
         audio.update(reverse and not paused, rear.closest_m)
         dashboard.render(
             snapshot,
@@ -228,18 +249,20 @@ def run_controller_diagnostic(config: AppConfig) -> int:
             screen.blit(small.render("Move each stick and trigger; edit axis indices/rest values in your YAML.", True, (146, 173, 186)), (24, 56))
             axes = controller.raw_axes()
             buttons = controller.raw_buttons()
+            hats = controller.raw_hats()
             if not axes:
                 screen.blit(font.render("No gamepad found. Connect it and restart this screen.", True, (250, 188, 126)), (24, 106))
             for index, value in enumerate(axes):
-                y = 103 + index * 36
+                y = 95 + index * 30
                 screen.blit(small.render(f"Axis {index:02d}   {value:+.3f}", True, (196, 217, 224)), (28, y))
                 pygame.draw.rect(screen, (36, 59, 72), (180, y + 3, 340, 14), border_radius=6)
                 center = 350
                 pygame.draw.line(screen, (93, 121, 135), (center, y + 1), (center, y + 19), 1)
                 marker = center + int(value * 165)
                 pygame.draw.circle(screen, (76, 207, 191), (marker, y + 10), 6)
-            button_y = 103 + len(axes) * 36
-            screen.blit(small.render("Buttons: " + ("  ".join(f"{i}:{value}" for i, value in enumerate(buttons)) or "none"), True, (196, 217, 224)), (28, min(button_y, 354)))
+            button_y = 95 + len(axes) * 30
+            screen.blit(small.render("Buttons: " + ("  ".join(f"{i}:{value}" for i, value in enumerate(buttons)) or "none"), True, (196, 217, 224)), (28, min(button_y, 330)))
+            screen.blit(small.render("D-pad: " + ("  ".join(f"{i}:{value}" for i, value in enumerate(hats)) or "none"), True, (196, 217, 224)), (28, min(button_y + 25, 356)))
             screen.blit(small.render("Esc closes diagnostics", True, (111, 140, 154)), (24, 386))
             pygame.display.flip()
             clock.tick(30)

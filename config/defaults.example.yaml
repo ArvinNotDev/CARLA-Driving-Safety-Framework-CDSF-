@@ -88,5 +88,7 @@ controller:
   handbrake_button: 4
   reset_button: 3
   pause_button: 7
+  horn_button: 9
+  dpad_hat: 0
   require_stop_for_reverse: true
   reverse_stop_speed_mps: 0.8
