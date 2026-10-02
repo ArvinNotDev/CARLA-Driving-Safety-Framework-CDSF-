@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import time
 
 import numpy as np
@@ -28,8 +27,12 @@ class Dashboard:
         self._main_scaled: pygame.Surface | None = None
         self._mirror_key: float | None = None
         self._mirror_surface: pygame.Surface | None = None
+        self._mirror_scaled_key: tuple[float, tuple[int, int]] | None = None
+        self._mirror_scaled: pygame.Surface | None = None
         self._lidar_key: float | None = None
         self._lidar_surface: pygame.Surface | None = None
+        self._edge_shade_size: tuple[int, int] | None = None
+        self._edge_shade: pygame.Surface | None = None
 
     def render(
         self,
@@ -75,10 +78,13 @@ class Dashboard:
         return self._main_surface
 
     def _draw_edge_shade(self, width: int, height: int) -> None:
-        shade = pygame.Surface((width, height), pygame.SRCALPHA)
-        pygame.draw.rect(shade, (2, 8, 15, 26), (0, 0, width, 104))
-        pygame.draw.rect(shade, (2, 8, 15, 42), (0, height - 176, width, 176))
-        self.screen.blit(shade, (0, 0))
+        size = (width, height)
+        if self._edge_shade_size != size:
+            self._edge_shade = pygame.Surface(size, pygame.SRCALPHA)
+            pygame.draw.rect(self._edge_shade, (2, 8, 15, 26), (0, 0, width, 104))
+            pygame.draw.rect(self._edge_shade, (2, 8, 15, 42), (0, height - 176, width, 176))
+            self._edge_shade_size = size
+        self.screen.blit(self._edge_shade, (0, 0))
 
     def _draw_status(self, width: int, status: str, paused: bool) -> None:
         badge = pygame.Rect(20, 18, 182, 38)
@@ -101,7 +107,11 @@ class Dashboard:
         surface = self._camera_surface(frame, mirror=True, allow_stale=paused)
         inner = pygame.Rect(x, y, target_width, target_height)
         if surface is not None:
-            self.screen.blit(pygame.transform.scale(surface, inner.size), inner)
+            cache_key = (frame[1], inner.size)
+            if cache_key != self._mirror_scaled_key:
+                self._mirror_scaled = pygame.transform.scale(surface, inner.size)
+                self._mirror_scaled_key = cache_key
+            self.screen.blit(self._mirror_scaled, inner)
         else:
             pygame.draw.rect(self.screen, (16, 28, 37), inner, border_radius=5)
             self._text("REAR VIEW", inner.center, self.small, (117, 145, 157), centered=True)
@@ -109,7 +119,7 @@ class Dashboard:
 
     def _draw_lidar(self, width: int, frame, paused: bool) -> None:
         points, timestamp = frame
-        if timestamp <= 0.0 or (not paused and time.monotonic() - timestamp > 1.5):
+        if timestamp <= 0.0:
             points = None
         panel_width, panel_height = 320, 310
         x, y = width - panel_width - 20, 20
@@ -129,6 +139,8 @@ class Dashboard:
             state, state_color = "NO DATA", (237, 168, 112)
         elif paused:
             state, state_color = "HOLD", (246, 194, 107)
+        elif time.monotonic() - timestamp > 1.5:
+            state, state_color = "STALE", (237, 168, 112)
         else:
             state, state_color = "LIVE", (87, 214, 163)
         state_rect = pygame.Rect(panel.right - 77, y + 10, 63, 23)
@@ -178,27 +190,38 @@ class Dashboard:
 
         if points is not None and len(points):
             scale = radius / view_range
-            for point in points:
-                forward, lateral = float(point[0]), float(point[1])
-                distance = math.hypot(forward, lateral)
-                if distance > view_range:
-                    continue
-                px = int(center[0] + lateral * scale)
-                py = int(center[1] - forward * scale)
-                if not (1 <= px < size[0] - 1 and 1 <= py < size[1] - 1):
-                    continue
-
-                height = float(point[2])
-                if height < -1.2:
-                    base_color = (90, 166, 255)
-                elif height < 0.4:
-                    base_color = (76, 227, 191)
-                else:
-                    base_color = (255, 174, 90)
-                brightness = 0.72 + 0.28 * (1.0 - distance / view_range)
-                color = tuple(int(channel * brightness) for channel in base_color)
-                point_radius = 3 if distance < 7.0 else 2 if distance < 17.0 else 1
-                pygame.draw.circle(surface, color, (px, py), point_radius)
+            forward = points[:, 0]
+            lateral = points[:, 1]
+            height = points[:, 2]
+            distance = np.hypot(forward, lateral)
+            px = np.rint(center[0] + lateral * scale).astype(np.int32)
+            py = np.rint(center[1] - forward * scale).astype(np.int32)
+            visible = (
+                np.isfinite(points).all(axis=1)
+                & (distance <= view_range)
+                & (px >= 1)
+                & (px < size[0] - 1)
+                & (py >= 1)
+                & (py < size[1] - 1)
+            )
+            px, py, distance, height = px[visible], py[visible], distance[visible], height[visible]
+            base_colors = np.where(
+                (height < -1.2)[:, None],
+                (90, 166, 255),
+                np.where((height < 0.4)[:, None], (76, 227, 191), (255, 174, 90)),
+            )
+            brightness = (0.72 + 0.28 * (1.0 - distance / view_range))[:, None]
+            colors = np.clip(base_colors * brightness, 0, 255).astype(np.uint8)
+            radii = np.where(distance < 7.0, 3, np.where(distance < 17.0, 2, 1))
+            pixels = pygame.surfarray.pixels3d(surface)
+            pixels[px, py] = colors
+            larger = radii >= 2
+            for offset_x, offset_y in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                pixels[px[larger] + offset_x, py[larger] + offset_y] = colors[larger]
+            largest = radii >= 3
+            for offset_x, offset_y in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                pixels[px[largest] + offset_x, py[largest] + offset_y] = colors[largest]
+            del pixels
 
         for label, position in (
             ("F", (center[0] - 3, 1)),
