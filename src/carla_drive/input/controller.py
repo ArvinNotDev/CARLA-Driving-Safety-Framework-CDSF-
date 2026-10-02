@@ -9,6 +9,13 @@ from dataclasses import replace
 
 import pygame
 
+try:
+    from pygame._sdl2 import controller as sdl_controller
+except ImportError:
+    sdl_controller = None
+
+GAMEPAD_ERRORS = (pygame.error, sdl_controller.error) if sdl_controller is not None else (pygame.error,)
+
 from carla_drive.config import ControllerConfig
 from carla_drive.domain import ControlInput
 
@@ -50,7 +57,21 @@ def dpad_pressed(previous: tuple[int, int], current: tuple[int, int]) -> frozens
         pressed.add("indicator_right")
     if current_y == 1 and previous_y != 1:
         pressed.add("headlight_cycle")
+    if current_y == -1 and previous_y != -1:
+        pressed.add("indicator_cancel")
     return frozenset(pressed)
+
+
+def dpad_button_pressed(previous: dict[str, bool], current: dict[str, bool]) -> frozenset[str]:
+    actions = {
+        "left": "indicator_left",
+        "right": "indicator_right",
+        "up": "headlight_cycle",
+        "down": "indicator_cancel",
+    }
+    return frozenset(
+        action for direction, action in actions.items() if current[direction] and not previous.get(direction, False)
+    )
 
 
 KEYBOARD_ACTION_KEYS = {
@@ -62,6 +83,7 @@ KEYBOARD_ACTION_KEYS = {
     pygame.K_z: "indicator_left",
     pygame.K_x: "indicator_right",
     pygame.K_h: "headlight_cycle",
+    pygame.K_o: "open_settings",
 }
 
 
@@ -96,13 +118,16 @@ class ControllerReader:
         "handbrake": "handbrake_button",
         "reset": "reset_button",
         "pause": "pause_button",
+        "open_settings": "settings_button",
     }
 
     def __init__(self, config: ControllerConfig):
         self.config = config
         self.joystick: pygame.joystick.JoystickType | None = None
+        self.gamepad = None
         self._previous_buttons: dict[str, bool] = {}
         self._previous_hat = (0, 0)
+        self._previous_dpad_buttons = {direction: False for direction in ("left", "right", "up", "down")}
         self._previous_steering = 0.0
         self._keyboard_keys_down: set[int] = set()
         self._keyboard_pressed = frozenset()
@@ -111,6 +136,14 @@ class ControllerReader:
         self._input_baseline_pending = True
         self._disconnected_this_sample = False
         self.keyboard_fallback = True
+        self._owns_gamepad_subsystem = False
+        if sdl_controller is not None:
+            try:
+                if not sdl_controller.get_init():
+                    sdl_controller.init()
+                    self._owns_gamepad_subsystem = True
+            except GAMEPAD_ERRORS:
+                LOG.warning("SDL gamepad mappings are unavailable; using joystick button/hat inputs.")
         pygame.joystick.init()
         self._connect()
         if not self.joystick:
@@ -122,9 +155,16 @@ class ControllerReader:
         joystick = pygame.joystick.Joystick(self.config.joystick_index)
         joystick.init()
         self.joystick = joystick
+        if sdl_controller is not None:
+            try:
+                if sdl_controller.is_controller(self.config.joystick_index):
+                    self.gamepad = sdl_controller.Controller.from_joystick(joystick)
+            except GAMEPAD_ERRORS:
+                self.gamepad = None
         self._mapping_warning = False
         self._previous_buttons.clear()
         self._previous_hat = (0, 0)
+        self._previous_dpad_buttons = {direction: False for direction in ("left", "right", "up", "down")}
         self._previous_steering = 0.0
         self._input_baseline_pending = True
         self.keyboard_fallback = False
@@ -177,6 +217,8 @@ class ControllerReader:
                 self._disconnect()
             elif event.type == pygame.JOYDEVICEADDED:
                 self._connect()
+        if not self.joystick:
+            self._connect()
         if self.joystick:
             try:
                 if self.joystick.get_init():
@@ -192,7 +234,7 @@ class ControllerReader:
                 if self._keyboard_focused and self._keyboard_pressed:
                     control = replace(control, pressed=control.pressed | self._keyboard_pressed)
                 return self._with_disconnect_marker(control)
-            except pygame.error:
+            except GAMEPAD_ERRORS:
                 self._disconnect()
         if self.joystick:
             self._disconnect()
@@ -207,6 +249,12 @@ class ControllerReader:
         if self.joystick:
             self._disconnected_this_sample = True
             LOG.warning("Controller disconnected; switching to keyboard controls.")
+            if self.gamepad is not None:
+                try:
+                    self.gamepad.quit()
+                except GAMEPAD_ERRORS:
+                    pass
+                self.gamepad = None
             try:
                 self.joystick.quit()
             except pygame.error:
@@ -224,6 +272,7 @@ class ControllerReader:
         if self.config.steering_axis_inverted:
             steering_raw = -steering_raw
         steering = normalize_steering(steering_raw, self.config.steering_deadzone, self.config.steering_response)
+        steering = max(-1.0, min(1.0, steering * self.config.steering_sensitivity))
         smoothing = self.config.steering_smoothing
         steering = self._previous_steering + (steering - self._previous_steering) * (1.0 - smoothing)
         self._previous_steering = steering
@@ -233,19 +282,74 @@ class ControllerReader:
         brake_raw = axes[self.config.brake_axis]
         throttle = normalize_trigger(throttle_raw, response=self.config.throttle_response, **kwargs)
         brake = normalize_trigger(brake_raw, response=self.config.brake_response, **kwargs)
-        current = {action: self._button(getattr(self.config, field)) for action, field in self.ACTION_BUTTONS.items()}
-        hat = (0, 0)
-        if self.config.dpad_hat < self.joystick.get_numhats():
-            hat = self.joystick.get_hat(self.config.dpad_hat)
+        current = {}
+        for action, field in self.ACTION_BUTTONS.items():
+            if action == "open_settings":
+                current[action] = self._settings_pressed()
+            else:
+                current[action] = self._button(getattr(self.config, field))
+        gamepad = getattr(self, "gamepad", None)
+        use_standard_dpad = self.config.dpad_mode == "auto" and gamepad is not None
+        use_hat = not use_standard_dpad and self.config.dpad_mode != "buttons" and self.config.dpad_hat < self.joystick.get_numhats()
+        hat = self.joystick.get_hat(self.config.dpad_hat) if use_hat else (0, 0)
+        if use_standard_dpad:
+            dpad_buttons = {
+                "left": gamepad.get_button(pygame.CONTROLLER_BUTTON_DPAD_LEFT),
+                "right": gamepad.get_button(pygame.CONTROLLER_BUTTON_DPAD_RIGHT),
+                "up": gamepad.get_button(pygame.CONTROLLER_BUTTON_DPAD_UP),
+                "down": gamepad.get_button(pygame.CONTROLLER_BUTTON_DPAD_DOWN),
+            }
+        else:
+            dpad_buttons = {
+                "left": self._button(self.config.dpad_left_button),
+                "right": self._button(self.config.dpad_right_button),
+                "up": self._button(self.config.dpad_up_button),
+                "down": self._button(self.config.dpad_down_button),
+            }
         if self._input_baseline_pending:
             pressed = frozenset()
             self._input_baseline_pending = False
         else:
             pressed = frozenset(action for action, down in current.items() if down and not self._previous_buttons.get(action, False))
-            pressed |= dpad_pressed(self._previous_hat, hat)
+            if use_hat:
+                pressed |= dpad_pressed(self._previous_hat, hat)
+            else:
+                previous_dpad = getattr(self, "_previous_dpad_buttons", {direction: False for direction in dpad_buttons})
+                pressed |= dpad_button_pressed(previous_dpad, dpad_buttons)
         self._previous_buttons = current
         self._previous_hat = hat
+        self._previous_dpad_buttons = dpad_buttons
         return ControlInput(steering, throttle, brake, current["handbrake"], pressed)
+
+    def _settings_button_index(self) -> int:
+        if self.config.settings_button >= 0:
+            return self.config.settings_button
+        get_name = getattr(self.joystick, "get_name", None) if self.joystick else None
+        joystick_name = get_name().casefold() if get_name else ""
+        if any(name in joystick_name for name in ("dualsense", "playstation 5", "ps5")):
+            return 9
+        return -1
+
+    def _settings_pressed(self) -> bool:
+        if self.config.settings_button >= 0:
+            return self._button(self.config.settings_button)
+        gamepad = getattr(self, "gamepad", None)
+        if gamepad is not None:
+            return gamepad.get_button(pygame.CONTROLLER_BUTTON_START)
+        return self._button(self._settings_button_index())
+
+    def apply_config(self, config: ControllerConfig) -> None:
+        reconnect = config.joystick_index != self.config.joystick_index
+        if reconnect and self.joystick:
+            self._disconnect()
+        self.config = config
+        self._previous_buttons.clear()
+        self._previous_hat = (0, 0)
+        self._previous_dpad_buttons = {direction: False for direction in ("left", "right", "up", "down")}
+        self._previous_steering = 0.0
+        self._input_baseline_pending = True
+        if reconnect:
+            self._connect()
 
     def _button(self, index: int) -> bool:
         return 0 <= index < self.joystick.get_numbuttons() and bool(self.joystick.get_button(index))
@@ -261,9 +365,21 @@ class ControllerReader:
         return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed)
 
     def close(self) -> None:
+        if self.gamepad is not None:
+            try:
+                self.gamepad.quit()
+            except GAMEPAD_ERRORS:
+                pass
+            self.gamepad = None
         if self.joystick:
             try:
                 self.joystick.quit()
             except pygame.error:
                 pass
             self.joystick = None
+        if self._owns_gamepad_subsystem and sdl_controller is not None:
+            try:
+                sdl_controller.quit()
+            except GAMEPAD_ERRORS:
+                pass
+            self._owns_gamepad_subsystem = False
