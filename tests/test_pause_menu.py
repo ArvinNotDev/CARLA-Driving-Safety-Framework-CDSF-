@@ -18,18 +18,14 @@ class AudioState:
         self.muted = not self.muted
         return self.muted
 
-    def play_ui(self):
-        return None
-
-
-def test_pause_menu_audio_toggle_and_actions():
+def test_pause_menu_reverse_beep_toggle_and_actions():
     pygame.display.init()
     pygame.font.init()
     screen = pygame.display.set_mode((1280, 700))
     audio = AudioState()
     menu = PauseMenu(screen, audio)
 
-    assert menu._activate("audio") is None
+    assert menu._activate("reverse_beep") is None
     assert audio.muted
     assert menu._activate("menu") == "menu"
     assert menu._activate("resume") == "resume"
