@@ -47,6 +47,10 @@ class _ImpactEvidence:
     excess_deceleration_mps2: float
 
 
+def is_reportable_collision(event: CollisionEvent | None, minimum_score: float = 0.8) -> bool:
+    return event is not None and event.impact_score >= minimum_score
+
+
 class KinematicCollisionDetector:
     """Infer abrupt longitudinal speed losses without collision-specific sensors."""
 
@@ -176,6 +180,8 @@ class KinematicCollisionDetector:
 
         event = self._make_event(sample, strong_single_sample)
         self._pending.clear()
+        if event.impact_score < self.config.minimum_impact_score:
+            return None
         self._cooldown_until_s = timestamp_s + self.config.cooldown_seconds
         self._rearm_required = True
         return event
