@@ -379,6 +379,7 @@ class CarlaSession:
         self.ego_vehicle.set_transform(self.initial_ego_transform)
         self.ego_vehicle.set_target_velocity(carla.Vector3D())
         self.ego_vehicle.apply_control(carla.VehicleControl(brake=1.0, hand_brake=True))
+        self._last_ego_light_state = None
 
     def snapshot(self, steering: float, throttle: float, brake: float, reverse: bool):
         from carla_drive.domain import VehicleSnapshot
