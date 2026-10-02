@@ -41,9 +41,9 @@ The current fixed layout supports windows of at least 1024×700 pixels; invalid 
 | Handbrake | Configured button | Space |
 | Reset vehicle | Configured button | Backspace |
 | Pause | Configured button | P |
-| Left / right indicator | D-pad left / right | — |
-| Headlight mode (off → low → high) | D-pad up | — |
-| Horn (hold) | R3 / right stick click | — |
+| Left / right indicator | D-pad left / right | Z / X |
+| Headlight mode (off → low → high) | D-pad up | H |
+| Horn (hold) | R3 / right stick click | Hold F |
 | Exit | — | Esc / window close |
 
 Controller axis indices and trigger resting/full values vary by driver. Run `--controller-debug`, move each control, and tune the indices and `trigger_rest_value` / `trigger_full_value` in the YAML. The defaults are a starting mapping, not a claim that every Xbox driver reports identical axes.

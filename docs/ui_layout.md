@@ -57,4 +57,4 @@ UI animations should never block the simulation loop.
 
 ## Controls shown at runtime
 
-Use the configured Xbox button mapping to cycle the three camera modes, toggle reverse, pause, reset to the original spawn, and use the handbrake. Keyboard fallback is shown on the launcher: A/D steer, W/S or up/down control pedals, C/Q cycle cameras, R toggles reverse, Space handbrake, Backspace reset, P pause, and Esc exits. The rear distance bar and beep are active only while reversing.
+Use the configured Xbox button mapping to cycle the three camera modes, toggle reverse, pause, reset to the original spawn, and use the handbrake. Keyboard fallback supports the same actions: A/D steer, W/S or Up/Down control pedals, C/Q cycle cameras or 1/2/3 select one, R toggles reverse, Space holds the handbrake, Backspace resets, P pauses, and Esc exits. Z/X toggle indicators, H cycles headlight modes, and holding F sounds the horn. The rear distance bar and beep are active only while reversing.
