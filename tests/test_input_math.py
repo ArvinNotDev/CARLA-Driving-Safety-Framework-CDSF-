@@ -1,4 +1,5 @@
-from carla_drive.input.controller import dpad_pressed, normalize_steering, normalize_trigger
+from carla_drive.config import ControllerConfig
+from carla_drive.input.controller import ControllerReader, dpad_pressed, normalize_steering, normalize_trigger
 import math
 
 
@@ -41,3 +42,35 @@ def test_dpad_up_only_cycles_when_pressed_and_diagonals_can_combine():
     assert dpad_pressed((0, 0), (0, 1)) == {"headlight_cycle"}
     assert dpad_pressed((0, 1), (0, 1)) == set()
     assert dpad_pressed((0, 0), (-1, 1)) == {"headlight_cycle", "indicator_left"}
+
+
+def test_keyboard_actions_remain_available_with_a_connected_controller():
+    import pygame
+
+    controller = ControllerReader.__new__(ControllerReader)
+    controller.config = ControllerConfig()
+    controller.joystick = type(
+        "Joystick",
+        (),
+        {
+            "get_init": lambda self: True,
+            "get_numaxes": lambda self: 6,
+            "get_axis": lambda self, index: -1.0,
+            "get_numbuttons": lambda self: 17,
+            "get_button": lambda self, index: False,
+            "get_numhats": lambda self: 0,
+        },
+    )()
+    controller._keyboard_pressed = frozenset()
+    controller._keyboard_focused = True
+    controller._keyboard_keys_down = set()
+    controller._previous_buttons = {}
+    controller._previous_hat = (0, 0)
+    controller._previous_steering = 0.0
+    controller._input_baseline_pending = False
+    controller._mapping_warning = False
+    controller._disconnected_this_sample = False
+    controller.keyboard_fallback = False
+
+    key_press = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_h, repeat=False)
+    assert "headlight_cycle" in controller.sample([key_press]).pressed
