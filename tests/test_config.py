@@ -13,12 +13,15 @@ def test_default_configuration_loads_and_validates():
     assert config.window.render_fps == 60
     assert config.lidar.points_per_second == 60000
     assert config.lidar.rotation_frequency_hz == 10.0
-    assert config.lidar.display_points == 1000
+    assert config.lidar.display_points == 2500
+    assert config.lidar.persistence_seconds == 0.35
     assert config.session.time_of_day == "Noon"
     assert config.session.traffic_vehicles == 0
     assert config.controller.trigger_full_value == 1.0
     assert config.controller.horn_button == 9
     assert config.controller.dpad_hat == 0
+    assert config.controller.steering_sensitivity == 1.0
+    assert config.controller.dpad_mode == "auto"
 
 
 def test_configuration_rejects_unknown_settings(tmp_path):
