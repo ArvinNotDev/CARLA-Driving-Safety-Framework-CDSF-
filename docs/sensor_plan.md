@@ -34,7 +34,7 @@ The sensor may be built with multiple `sensor.other.obstacle` actors facing back
 
 The implementation uses three narrow traces (left, center, right), expires measurements that stop receiving callbacks, and presents the nearest fresh distance. The bar uses each side's distance, with the center trace contributing to both halves. Missing events display “NO TARGET,” since silence does not prove the space behind the vehicle is clear. Its coordinates and trace range are configurable. It only produces dashboard state; no sensor callback can apply control.
 
-The LiDAR callback decimates each measurement to a configured display-point budget before storing it. The UI draws a zoomed top-down 360-degree view with distance rings and return-height colors. `display_range_m` controls the visible crop independently of the physical sensor `range_m`. This is a display monitor, not object classification or control input.
+The LiDAR callback decimates each measurement to a configured display-point budget before storing it, and empty measurements do not erase the most recent valid cloud. The default sensor capture interval matches one rotation, yielding a steady 10 Hz display while the 30 Hz simulation advances. The UI draws a zoomed top-down 360-degree view with distance rings and return-height colors. `display_range_m` controls the visible crop independently of the physical sensor `range_m`. This is a display monitor, not object classification or control input.
 
 ## Kinematic impact detection
 
