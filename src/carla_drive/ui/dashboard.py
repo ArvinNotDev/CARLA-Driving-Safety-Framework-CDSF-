@@ -193,6 +193,7 @@ class Dashboard:
             forward = points[:, 0]
             lateral = points[:, 1]
             height = points[:, 2]
+            age = np.maximum(0.0, points[:, 3]) if points.shape[1] > 3 else np.zeros(len(points))
             distance = np.hypot(forward, lateral)
             px = np.rint(center[0] + lateral * scale).astype(np.int32)
             py = np.rint(center[1] - forward * scale).astype(np.int32)
@@ -204,15 +205,18 @@ class Dashboard:
                 & (py >= 1)
                 & (py < size[1] - 1)
             )
-            px, py, distance, height = px[visible], py[visible], distance[visible], height[visible]
+            px, py, distance, height, age = px[visible], py[visible], distance[visible], height[visible], age[visible]
             base_colors = np.where(
                 (height < -1.2)[:, None],
                 (90, 166, 255),
                 np.where((height < 0.4)[:, None], (76, 227, 191), (255, 174, 90)),
             )
-            brightness = (0.72 + 0.28 * (1.0 - distance / view_range))[:, None]
+            distance_brightness = 0.72 + 0.28 * (1.0 - distance / view_range)
+            age_brightness = 0.15 + 0.85 * np.clip(1.0 - age / self.config.lidar.persistence_seconds, 0.0, 1.0)
+            brightness = (distance_brightness * age_brightness)[:, None]
             colors = np.clip(base_colors * brightness, 0, 255).astype(np.uint8)
             radii = np.where(distance < 7.0, 3, np.where(distance < 17.0, 2, 1))
+            radii = np.where(age > self.config.lidar.persistence_seconds * 0.6, np.maximum(1, radii - 1), radii)
             pixels = pygame.surfarray.pixels3d(surface)
             pixels[px, py] = colors
             larger = radii >= 2
