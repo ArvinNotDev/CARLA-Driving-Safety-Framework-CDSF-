@@ -19,10 +19,11 @@ from carla_drive.config import AppConfig, load_config
 from carla_drive.domain import CameraMode, DrivingSnapshot
 from carla_drive.input.controller import ControllerReader
 from carla_drive.sensors.monitor import MonitorSensors
-from carla_drive.safety.kinematic_collision import KinematicCollisionDetector
-from carla_drive.ui.audio import ParkingBeep
+from carla_drive.safety.kinematic_collision import KinematicCollisionDetector, is_reportable_collision
+from carla_drive.ui.audio import DrivingAudio
 from carla_drive.ui.dashboard import Dashboard
 from carla_drive.ui.launcher import Launcher
+from carla_drive.ui.pause_menu import PauseMenu
 
 LOG = logging.getLogger("carla_drive")
 def main(argv: list[str] | None = None) -> int:
@@ -47,69 +48,79 @@ def run_application(config: AppConfig) -> int:
     pygame.init()
     pygame.display.set_caption("CARLA Drive")
     screen = pygame.display.set_mode((config.window.width, config.window.height))
-    session: CarlaSession | None = None
-    controller: ControllerReader | None = None
-    audio: ParkingBeep | None = None
     try:
-        session = _connect_with_retry(screen, config)
-        if session is None:
-            return 0
-        _show_startup_status(
-            screen,
-            "CHECKING AVAILABLE CONTENT",
-            "Discovering installed Town maps, weather, and vehicles.",
-        )
-        maps = session.available_maps()
-        vehicles = session.available_vehicles()
-        weather = discover_weather_presets()
-        if not weather:
-            raise RuntimeError("This CARLA Python API exposes no supported weather presets.")
-        if not vehicles:
-            raise RuntimeError("No four-wheel vehicle blueprints are available in the current CARLA world.")
-        selected = Launcher(screen, maps, weather, vehicles, config.session).run()
-        if selected is None:
-            return 0
+        muted = False
+        while True:
+            session: CarlaSession | None = None
+            controller: ControllerReader | None = None
+            audio: DrivingAudio | None = None
+            action = "quit"
+            try:
+                session = _connect_with_retry(screen, config)
+                if session is None:
+                    return 0
+                _show_startup_status(
+                    screen,
+                    "CHECKING AVAILABLE CONTENT",
+                    "Discovering installed Town maps, weather, and vehicles.",
+                )
+                maps = session.available_maps()
+                vehicles = session.available_vehicles()
+                weather = discover_weather_presets()
+                if not weather:
+                    raise RuntimeError("This CARLA Python API exposes no supported weather presets.")
+                if not vehicles:
+                    raise RuntimeError("No four-wheel vehicle blueprints are available in the current CARLA world.")
+                selected = Launcher(screen, maps, weather, vehicles, config.session).run()
+                if selected is None:
+                    return 0
 
-        screen.fill((8, 15, 25))
-        loading_font = pygame.font.Font(None, 34)
-        loading_text = loading_font.render(f"Loading {selected.map_name.rsplit('/', 1)[-1]}…", True, (219, 236, 240))
-        screen.blit(loading_text, loading_text.get_rect(center=screen.get_rect().center))
-        pygame.display.flip()
-        session.prepare(selected.map_name, selected.weather_preset, selected.random_seed)
-        session.spawn_ego(selected.vehicle_blueprint, selected.random_seed)
-        session.spawn_traffic(selected.traffic_vehicles, selected.random_seed)
-        session.spawn_pedestrians(selected.pedestrians, selected.random_seed)
+                screen.fill((8, 15, 25))
+                loading_font = pygame.font.Font(None, 34)
+                loading_text = loading_font.render(f"Loading {selected.map_name.rsplit('/', 1)[-1]}…", True, (219, 236, 240))
+                screen.blit(loading_text, loading_text.get_rect(center=screen.get_rect().center))
+                pygame.display.flip()
+                session.prepare(selected.map_name, selected.weather_preset, selected.random_seed, selected.time_of_day)
+                session.spawn_ego(selected.vehicle_blueprint, selected.random_seed)
+                session.spawn_traffic(selected.traffic_vehicles, selected.random_seed)
+                session.spawn_pedestrians(selected.pedestrians, selected.random_seed)
 
-        controller = ControllerReader(config.controller)
-        camera = CameraRig(session, config.camera)
-        sensors = MonitorSensors(session, config)
-        dashboard = Dashboard(screen, config)
-        audio = ParkingBeep(config.rear_parking)
-        pygame.display.set_caption("CARLA Drive | Manual Session")
-        LOG.info(
-            "Session started: map=%s, weather=%s, vehicle=%s, traffic=%d, pedestrians=%d",
-            selected.map_name,
-            selected.weather_preset,
-            selected.vehicle_blueprint,
-            selected.traffic_vehicles,
-            selected.pedestrians,
-        )
-        run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config)
-        return 0
-    except (RuntimeError, ValueError) as exc:
-        LOG.error("CARLA Drive could not start: %s", exc)
-        print(f"CARLA Drive stopped: {exc}", file=sys.stderr)
-        return 1
+                controller = ControllerReader(config.controller)
+                camera = CameraRig(session, config.camera)
+                sensors = MonitorSensors(session, config)
+                dashboard = Dashboard(screen, config)
+                audio = DrivingAudio(config.rear_parking)
+                audio.set_muted(muted)
+                audio.play_startup()
+                pygame.display.set_caption("CARLA Drive | Manual Session")
+                LOG.info(
+                    "Session started: map=%s, weather=%s, time=%s, vehicle=%s, traffic=%d, pedestrians=%d",
+                    selected.map_name,
+                    selected.weather_preset,
+                    selected.time_of_day,
+                    selected.vehicle_blueprint,
+                    selected.traffic_vehicles,
+                    selected.pedestrians,
+                )
+                action = run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config)
+                muted = audio.muted
+            except (RuntimeError, ValueError) as exc:
+                LOG.error("CARLA Drive could not start: %s", exc)
+                print(f"CARLA Drive stopped: {exc}", file=sys.stderr)
+                return 1
+            finally:
+                if audio:
+                    audio.close()
+                if controller:
+                    controller.close()
+                if session:
+                    session.close()
+            if action != "menu":
+                return 0
     except KeyboardInterrupt:
         LOG.info("Interrupted; cleaning up")
         return 130
     finally:
-        if audio:
-            audio.close()
-        if controller:
-            controller.close()
-        if session:
-            session.close()
         pygame.quit()
 
 
@@ -223,28 +234,34 @@ def _connect_with_retry(screen: pygame.Surface, config: AppConfig) -> CarlaSessi
         clock.tick(30)
 
 
-def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> None:
+def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> str:
     clock = pygame.time.Clock()
     reverse = False
     lights = EgoLightState()
     collision_detector = KinematicCollisionDetector(config.safety)
     detector_vehicle_id = session.ego_vehicle.id if session.ego_vehicle else None
     paused = False
-    running = True
     status = ""
     status_until = 0.0
     control = None
     next_tick_at = time.monotonic()
     step_seconds = config.carla.fixed_delta_seconds
 
-    while running:
+    while True:
         events = pygame.event.get()
         for event in events:
             if event.type == pygame.QUIT:
-                running = False
+                return "quit"
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    audio.pause_vehicle_audio()
+                    session.set_paused(True)
+                    action = PauseMenu(screen, audio).run()
+                    pygame.display.set_caption("CARLA Drive | Manual Session")
+                    if action != "resume":
+                        return action
+                    session.set_paused(False)
+                    next_tick_at = time.monotonic() + step_seconds
                 elif event.key == pygame.K_1:
                     camera.set_mode(CameraMode.COCKPIT)
                 elif event.key == pygame.K_2:
@@ -252,8 +269,6 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
                 elif event.key == pygame.K_3:
                     camera.set_mode(CameraMode.OVERHEAD)
 
-        if not running:
-            break
         control = controller.sample(events)
         if "controller_disconnected" in control.pressed:
             lights.clear_indicators()
@@ -279,6 +294,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             speed = session.vehicle_speed_mps()
             if not config.controller.require_stop_for_reverse or speed <= config.controller.reverse_stop_speed_mps:
                 reverse = not reverse
+                audio.play_shift()
                 status = "Reverse" if reverse else "Drive"
             else:
                 status = "Stop before changing direction"
@@ -328,7 +344,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
         else:
             collision_detector.reset()
             collision_event = None
-        if collision_event:
+        if is_reportable_collision(collision_event, config.safety.minimum_impact_score):
             speed_drop_kmh = max(
                 0.0,
                 (collision_event.pre_impact_speed_mps - collision_event.post_impact_speed_mps) * 3.6,
@@ -347,9 +363,12 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
                 collision_event.impact_score,
                 collision_event.reason,
             )
-            status = f"IMPACT CANDIDATE | drop {speed_drop_kmh:.0f} km/h | score {collision_event.impact_score:.2f}"
+            status = f"COLLISION WARNING | drop {speed_drop_kmh:.0f} km/h | confidence {collision_event.impact_score:.0%}"
             status_until = time.monotonic() + 3.0
+            audio.play_collision_alert()
         audio.set_horn(control.horn and not paused)
+        audio.update_engine(applied_throttle, vehicle.speed_kmh)
+        audio.update_indicators("left" if lights.left_indicator else "right" if lights.right_indicator else None)
         audio.update(reverse and not paused, rear.closest_m)
         dashboard.render(
             snapshot,
@@ -362,6 +381,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
         )
         pygame.display.flip()
         clock.tick(config.window.render_fps)
+    return "quit"
 
 
 def run_controller_diagnostic(config: AppConfig) -> int:
