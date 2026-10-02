@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import threading
 import time
+from collections import deque
 
 import carla
 import numpy as np
@@ -25,6 +25,7 @@ class MonitorSensors:
         self._lidar_lock = threading.Lock()
         self._lidar_points: np.ndarray | None = None
         self._lidar_received_at = 0.0
+        self._lidar_scans: deque[tuple[np.ndarray, float, np.ndarray]] = deque(maxlen=64)
         self._rear_lock = threading.Lock()
         self._rear_distances: dict[str, tuple[float, float]] = {}
         self._rear_minimum_frame = 0
@@ -70,7 +71,7 @@ class MonitorSensors:
             "range": config.range_m,
             "points_per_second": config.points_per_second,
             "rotation_frequency": config.rotation_frequency_hz,
-            "sensor_tick": 1.0 / config.rotation_frequency_hz,
+            "sensor_tick": self.config.carla.fixed_delta_seconds,
             "upper_fov": config.upper_fov,
             "lower_fov": config.lower_fov,
         }
@@ -88,13 +89,29 @@ class MonitorSensors:
     def _on_lidar(self, measurement: carla.LidarMeasurement) -> None:
         points = np.frombuffer(measurement.raw_data, dtype=np.float32).reshape(-1, 4)
         points = points[np.isfinite(points).all(axis=1)]
-        if not len(points):
-            return
-        if len(points) > self.config.lidar.display_points:
-            stride = math.ceil(len(points) / self.config.lidar.display_points)
-            points = points[::stride]
-        display_points = points[:, :3].copy()
+        timestamp = float(measurement.timestamp)
+        current_transform = np.asarray(measurement.transform.get_matrix(), dtype=np.float32)
+        inverse = np.asarray(measurement.transform.get_inverse_matrix(), dtype=np.float32)
         with self._lidar_lock:
+            if len(points):
+                self._lidar_scans.append((points[:, :3].copy(), timestamp, current_transform))
+
+            persistence = self.config.lidar.persistence_seconds
+            while self._lidar_scans and timestamp - self._lidar_scans[0][1] > persistence:
+                self._lidar_scans.popleft()
+
+            point_clouds = []
+            for scan_points, scan_timestamp, transform in self._lidar_scans:
+                world_points = scan_points @ transform[:3, :3].T + transform[:3, 3]
+                current_points = world_points @ inverse[:3, :3].T + inverse[:3, 3]
+                age = np.full((len(current_points), 1), max(0.0, timestamp - scan_timestamp), dtype=np.float32)
+                point_clouds.append(np.concatenate((current_points, age), axis=1))
+
+            display_points = np.concatenate(point_clouds) if point_clouds else np.empty((0, 4), dtype=np.float32)
+            point_budget = self.config.lidar.display_points
+            if len(display_points) > point_budget:
+                sample_indices = np.linspace(0, len(display_points) - 1, point_budget, dtype=np.int32)
+                display_points = display_points[sample_indices]
             self._lidar_points = display_points
             self._lidar_received_at = time.monotonic()
 
