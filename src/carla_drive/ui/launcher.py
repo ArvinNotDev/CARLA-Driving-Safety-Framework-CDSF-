@@ -8,7 +8,8 @@ import webbrowser
 import pygame
 
 from carla_drive.carla.session import VehicleOption, friendly_map_name
-from carla_drive.config import SessionConfig
+from carla_drive.config import ControllerConfig, SessionConfig
+from carla_drive.ui.controller_settings import ControllerSettings
 
 TIME_OF_DAY_OPTIONS = ("Dawn", "Morning", "Noon", "Afternoon", "Sunset", "Night")
 
@@ -37,6 +38,7 @@ class Launcher:
         weather: list[tuple[str, str]],
         vehicles: list[VehicleOption],
         defaults: SessionConfig,
+        controller_defaults: ControllerConfig | None = None,
     ):
         self.screen = screen
         if not maps:
@@ -48,6 +50,9 @@ class Launcher:
         self.weather = weather
         self.vehicles = vehicles
         self.defaults = defaults
+        self.controller_config = controller_defaults or ControllerConfig()
+        self.controller_name = ""
+        self.quit_requested = False
         self.clock = pygame.time.Clock()
         self.font_title = pygame.font.SysFont("Segoe UI", 34, bold=True)
         self.font_heading = pygame.font.SysFont("Segoe UI", 19, bold=True)
@@ -76,6 +81,7 @@ class Launcher:
         self.dropdown_option_rects: list[tuple[int, pygame.Rect]] = []
         self.github_rect = pygame.Rect(0, 0, 0, 0)
         self.start_rect = pygame.Rect(0, 0, 0, 0)
+        self.controller_settings_rect = pygame.Rect(0, 0, 0, 0)
 
     @staticmethod
     def _find_index(items, selected, key):
@@ -135,17 +141,23 @@ class Launcher:
         if key == pygame.K_ESCAPE:
             return None
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.focus == 6:
+                self._open_controller_settings()
+                return None if self.quit_requested else _CONTINUE
             return self._session_config()
         if key in (pygame.K_UP, pygame.K_w):
-            self.focus = (self.focus - 1) % 6
+            self.focus = (self.focus - 1) % 7
         elif key in (pygame.K_DOWN, pygame.K_s):
-            self.focus = (self.focus + 1) % 6
+            self.focus = (self.focus + 1) % 7
         elif key in (pygame.K_LEFT, pygame.K_a):
             self._change(-1)
         elif key in (pygame.K_RIGHT, pygame.K_d):
             self._change(1)
         elif key == pygame.K_SPACE and self.focus < 4:
             self._open_dropdown(self.focus)
+        elif key == pygame.K_SPACE and self.focus == 6:
+            self._open_controller_settings()
+            return None if self.quit_requested else _CONTINUE
         return _CONTINUE
 
     def _click(self, position: tuple[int, int]):
@@ -164,6 +176,9 @@ class Launcher:
             return _CONTINUE
         if self.start_rect.collidepoint(position):
             return self._session_config()
+        if self.controller_settings_rect.collidepoint(position):
+            self._open_controller_settings()
+            return None if self.quit_requested else _CONTINUE
 
         for index, rect in enumerate(self.row_rects):
             if not rect.collidepoint(position):
@@ -257,6 +272,16 @@ class Launcher:
             traffic_vehicles=self.traffic,
             pedestrians=self.pedestrians,
         )
+
+    def _open_controller_settings(self) -> None:
+        dialog = ControllerSettings(self.screen, self.controller_config, controller_name=self.controller_name)
+        updated = dialog.run()
+        pygame.display.set_caption("CARLA Drive | Session Setup")
+        if dialog.quit_requested:
+            self.quit_requested = True
+        elif updated is not None:
+            self.controller_config = updated
+            self.status = "Controller settings saved"
 
     def _draw(self) -> None:
         width, height = self.screen.get_size()
@@ -412,9 +437,16 @@ class Launcher:
         self._draw_github_mark((self.github_rect.x + 20, self.github_rect.centery))
         self._text("GitHub  /  @ArvinNotDev", (self.github_rect.x + 39, self.github_rect.y + 12), self.font_small, TEXT)
 
-        hint = "UP / DOWN  FOCUS     LEFT / RIGHT  ADJUST     SPACE  OPTIONS     ENTER  START"
-        hint_rect = self.font_small.render(hint, True, FAINT).get_rect(center=(width // 2, self.github_rect.centery))
+        self.controller_settings_rect = pygame.Rect(width - 466, height - 68, 210, 48)
+        hint = "UP / DOWN  NAVIGATE     LEFT / RIGHT  ADJUST"
+        hint_center = (self.github_rect.right + self.controller_settings_rect.left) // 2
+        hint_rect = self.font_small.render(hint, True, FAINT).get_rect(center=(hint_center, self.github_rect.centery))
         self.screen.blit(self.font_small.render(hint, True, FAINT), hint_rect)
+
+        settings_hovered = self.controller_settings_rect.collidepoint(pygame.mouse.get_pos()) or self.focus == 6
+        pygame.draw.rect(self.screen, (27, 63, 73) if settings_hovered else (19, 39, 53), self.controller_settings_rect, border_radius=12)
+        pygame.draw.rect(self.screen, PANEL_EDGE, self.controller_settings_rect, width=1, border_radius=12)
+        self._text("🎮  CONTROLLER", self.controller_settings_rect, self.font_button, TEXT, center=True)
 
         self.start_rect = pygame.Rect(width - 242, height - 68, 210, 48)
         mouse = pygame.mouse.get_pos()
