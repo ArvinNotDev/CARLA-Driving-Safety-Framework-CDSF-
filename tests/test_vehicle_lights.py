@@ -83,3 +83,25 @@ def test_session_passes_native_carla_vehicle_light_state_to_vehicle():
     assert len(observed) == 1
     assert isinstance(observed[0], carla.VehicleLightState)
     assert int(observed[0]) == int(carla.VehicleLightState.Position | carla.VehicleLightState.LowBeam)
+
+
+def test_session_reapplies_light_state_after_vehicle_reset():
+    observed = []
+    session = CarlaSession.__new__(CarlaSession)
+    session.ego_vehicle = SimpleNamespace(
+        id=1,
+        apply_control=lambda control: None,
+        set_light_state=lambda state: observed.append(state),
+        set_transform=lambda transform: None,
+        set_target_velocity=lambda velocity: None,
+    )
+    session.initial_ego_transform = object()
+    session._last_ego_light_state = None
+    lights = EgoLightState()
+
+    session.apply_control(0.0, 0.0, 0.0, False, False, lights)
+    session.reset_ego()
+    session.apply_control(0.0, 0.0, 0.0, False, False, lights)
+
+    assert len(observed) == 2
+    assert int(observed[0]) == int(observed[1])
