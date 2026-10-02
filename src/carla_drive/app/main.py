@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import queue
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -49,12 +51,9 @@ def run_application(config: AppConfig) -> int:
     controller: ControllerReader | None = None
     audio: ParkingBeep | None = None
     try:
-        _show_startup_status(
-            screen,
-            "CONNECTING TO CARLA",
-            f"{config.carla.host}:{config.carla.port}  /  CARLA 0.9.16",
-        )
-        session = CarlaSession(config)
+        session = _connect_with_retry(screen, config)
+        if session is None:
+            return 0
         _show_startup_status(
             screen,
             "CHECKING AVAILABLE CONTENT",
@@ -125,6 +124,103 @@ def _show_startup_status(screen: pygame.Surface, title: str, detail: str) -> Non
     screen.blit(title_surface, title_surface.get_rect(center=(width // 2, height // 2 - 15)))
     screen.blit(detail_surface, detail_surface.get_rect(center=(width // 2, height // 2 + 23)))
     pygame.display.flip()
+
+
+def _connect_with_retry(screen: pygame.Surface, config: AppConfig) -> CarlaSession | None:
+    result: queue.Queue[tuple[CarlaSession | None, Exception | None]] = queue.Queue()
+    state_lock = threading.Lock()
+    cancelled = False
+    clock = pygame.time.Clock()
+    retry_rect = pygame.Rect(0, 0, 240, 52)
+    error: Exception | None = None
+    connecting = False
+
+    def start_attempt() -> None:
+        nonlocal connecting
+        connecting = True
+
+        def connect() -> None:
+            try:
+                connected_session = CarlaSession(config)
+            except Exception as exc:
+                result.put((None, exc))
+                return
+            with state_lock:
+                if cancelled:
+                    connected_session.close()
+                else:
+                    result.put((connected_session, None))
+
+        threading.Thread(target=connect, name="carla-connect", daemon=True).start()
+
+    start_attempt()
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                with state_lock:
+                    cancelled = True
+                try:
+                    connected_session, _ = result.get_nowait()
+                    if connected_session is not None:
+                        connected_session.close()
+                except queue.Empty:
+                    pass
+                return None
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                with state_lock:
+                    cancelled = True
+                try:
+                    connected_session, _ = result.get_nowait()
+                    if connected_session is not None:
+                        connected_session.close()
+                except queue.Empty:
+                    pass
+                return None
+            if (
+                event.type == pygame.MOUSEBUTTONDOWN
+                and event.button == 1
+                and not connecting
+                and retry_rect.collidepoint(event.pos)
+            ):
+                start_attempt()
+
+        try:
+            connected_session, error = result.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            if connected_session is not None:
+                return connected_session
+            connecting = False
+            LOG.warning("Could not connect to CARLA: %s", error)
+
+        width, height = screen.get_size()
+        screen.fill((7, 15, 25))
+        pygame.draw.rect(screen, (77, 208, 190), (0, 0, width, 3))
+        title_font = pygame.font.SysFont("Segoe UI", 28, bold=True)
+        detail_font = pygame.font.SysFont("Segoe UI", 17)
+        title = "CONNECTING TO CARLA" if connecting else "CARLA CONNECTION FAILED"
+        detail = (
+            f"{config.carla.host}:{config.carla.port}  /  CARLA 0.9.16"
+            if connecting
+            else str(error or "Check that the CARLA server is running, then try again.")
+        )
+        title_surface = title_font.render(title, True, (237, 245, 248))
+        screen.blit(title_surface, title_surface.get_rect(center=(width // 2, height // 2 - 45)))
+        while detail and detail_font.size(detail)[0] > width - 80:
+            detail = detail[:-1]
+        detail_surface = detail_font.render(detail, True, (164, 184, 194))
+        screen.blit(detail_surface, detail_surface.get_rect(center=(width // 2, height // 2 + 2)))
+        if not connecting:
+            retry_rect.center = (width // 2, height // 2 + 78)
+            pygame.draw.rect(screen, (29, 112, 105), retry_rect, border_radius=10)
+            pygame.draw.rect(screen, (77, 208, 190), retry_rect, width=1, border_radius=10)
+            retry_surface = detail_font.render("Retry connection", True, (237, 245, 248))
+            screen.blit(retry_surface, retry_surface.get_rect(center=retry_rect.center))
+            hint_surface = detail_font.render("Click Retry or press Esc to quit", True, (136, 160, 173))
+            screen.blit(hint_surface, hint_surface.get_rect(center=(width // 2, height // 2 + 126)))
+        pygame.display.flip()
+        clock.tick(30)
 
 
 def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> None:
