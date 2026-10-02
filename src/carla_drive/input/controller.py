@@ -256,7 +256,8 @@ class ControllerReader:
         throttle = float(keys[pygame.K_w] or keys[pygame.K_UP])
         brake = float(keys[pygame.K_s] or keys[pygame.K_DOWN])
         handbrake = bool(keys[pygame.K_SPACE])
-        return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed)
+        horn = bool(keys[pygame.K_f])
+        return ControlInput(steering, throttle, brake, handbrake, self._keyboard_pressed, horn=horn)
 
     def close(self) -> None:
         if self.joystick:
