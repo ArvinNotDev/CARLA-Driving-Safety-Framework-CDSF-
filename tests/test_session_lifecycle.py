@@ -2,7 +2,9 @@
 
 from types import SimpleNamespace
 
-from carla_drive.carla.session import CarlaSession
+import carla
+
+from carla_drive.carla.session import CarlaSession, weather_for_time_of_day
 from carla_drive.config import AppConfig
 
 
@@ -87,3 +89,13 @@ def test_prepare_rejects_internal_map_before_calling_load_world():
         assert "not a drivable CARLA Town map" in str(exc)
     else:
         raise AssertionError("internal CARLA map should be rejected before loading")
+
+
+def test_time_of_day_copies_weather_and_changes_sun_angle_without_mutating_preset():
+    preset = carla.WeatherParameters.ClearNoon
+
+    weather = weather_for_time_of_day("ClearNoon", "Night")
+
+    assert weather.sun_altitude_angle == -90.0
+    assert weather.cloudiness == preset.cloudiness
+    assert preset.sun_altitude_angle > 0.0
