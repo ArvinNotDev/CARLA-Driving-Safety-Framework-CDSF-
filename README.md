@@ -17,7 +17,7 @@ Install the test extra when developing: `python -m pip install -e ".[test]"`, th
 
 The CARLA Python API is supplied by the matching CARLA installation and is intentionally not downloaded as a generic PyPI dependency. If the app cannot connect, check that the server is running and that `carla.host`, `carla.port`, and `carla.timeout_seconds` match it.
 
-The setup screen scans installed Town maps and four-wheel vehicles before opening. It starts with zero NPCs and shows map, weather, and vehicle choices in dropdowns. Click a dropdown to choose an item; for keyboard use, move with Up/Down, adjust with Left/Right, and press Space to open a dropdown. Press Enter or click **Start Driving** to begin. The GitHub button opens [@ArvinNotDev](https://github.com/ArvinNotDev/).
+The setup screen scans installed Town maps and four-wheel vehicles before opening. It starts with zero NPCs and shows map, weather, vehicle, and time-of-day choices in dropdowns. Time of day adjusts the sun angle while preserving the selected weather preset. Click a dropdown to choose an item; for keyboard use, move with Up/Down, adjust with Left/Right, and press Space to open a dropdown. Press Enter or click **Start Driving** to begin. The GitHub button opens [@ArvinNotDev](https://github.com/ArvinNotDev/).
 
 For an API/controller check without spawning vehicles:
 
@@ -42,11 +42,14 @@ The current fixed layout supports windows of at least 1024×700 pixels; invalid 
 | Reset vehicle | Configured button | Backspace |
 | Pause | Configured button | P |
 | Left / right indicator | D-pad left / right | Z / X |
-| Headlight mode (off → low → high) | D-pad up | H |
+| Headlight mode (low → high → off) | D-pad up | H |
 | Horn (hold) | R3 / right stick click | Hold F |
-| Exit | — | Esc / window close |
+| Pause menu | — | Esc |
+| Exit | — | Window close |
 
 Controller axis indices and trigger resting/full values vary by driver. Run `--controller-debug`, move each control, and tune the indices and `trigger_rest_value` / `trigger_full_value` in the YAML. The defaults are a starting mapping, not a claim that every Xbox driver reports identical axes.
+
+The pause menu shows a speaker emoji for the current mute state and has controls to mute or unmute the generated engine idle/rev loop, horn, indicator ticks, rear parking beeps, collision alert, and gear-shift cues. It also returns to session setup or resumes the current drive. The synchronous simulation step defaults to 60 Hz and the render cap defaults to 90 FPS; lower these in YAML if the server or graphics hardware cannot keep up. Collision warnings are shown and sounded only at or above the configured `safety.minimum_impact_score` (default 0.80).
 
 ## What this project is
 
@@ -69,7 +72,7 @@ This blueprint targets **CARLA 0.9.16** and its Python API. Keep the CARLA versi
 - `src/carla_drive/input/controller.py` normalizes controller values and supplies keyboard fallback.
 - `src/carla_drive/camera/rig.py` switches the main camera transform; `sensors/monitor.py` captures the mirror, LiDAR, and rear obstacle traces.
 - `src/carla_drive/safety/kinematic_collision.py` detects strong impact-like events from short-term longitudinal motion and control history without spawning a collision sensor.
-- `src/carla_drive/ui/` contains the setup screen, dashboard, and time-based parking beeps.
+- `src/carla_drive/ui/` contains the setup screen, dashboard, pause menu, and driving audio cues.
 - `src/carla_drive/config.py` validates the YAML runtime configuration; `domain.py` defines compact UI state.
 
 CARLA's client/server model and synchronous mode are important to the runtime architecture. The application should have one clear owner of `world.tick()` and should restore the original world / Traffic Manager settings during shutdown.
