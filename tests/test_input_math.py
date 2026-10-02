@@ -1,5 +1,5 @@
 from carla_drive.config import ControllerConfig
-from carla_drive.input.controller import ControllerReader, dpad_pressed, normalize_steering, normalize_trigger
+from carla_drive.input.controller import ControllerReader, dpad_button_pressed, dpad_pressed, normalize_steering, normalize_trigger
 import math
 
 
@@ -42,6 +42,84 @@ def test_dpad_up_only_cycles_when_pressed_and_diagonals_can_combine():
     assert dpad_pressed((0, 0), (0, 1)) == {"headlight_cycle"}
     assert dpad_pressed((0, 1), (0, 1)) == set()
     assert dpad_pressed((0, 0), (-1, 1)) == {"headlight_cycle", "indicator_left"}
+
+
+def test_dpad_button_actions_fire_once_per_direction_press():
+    previous = {"left": False, "right": False, "up": False, "down": False}
+    current = {**previous, "right": True, "down": True}
+    assert dpad_button_pressed(previous, current) == {"indicator_right", "indicator_cancel"}
+    assert dpad_button_pressed(current, current) == set()
+
+
+def test_standard_gamepad_dpad_and_start_open_expected_actions():
+    import pygame
+
+    class Joystick:
+        def get_numaxes(self):
+            return 6
+
+        def get_axis(self, index):
+            return 0.0 if index == 0 else -1.0
+
+        def get_numbuttons(self):
+            return 17
+
+        def get_button(self, index):
+            return False
+
+        def get_numhats(self):
+            return 0
+
+        def get_hat(self, index):
+            return (0, 0)
+
+    class Gamepad:
+        buttons = set()
+
+        def get_button(self, index):
+            return index in self.buttons
+
+    controller = ControllerReader.__new__(ControllerReader)
+    controller.config = ControllerConfig()
+    controller.joystick = Joystick()
+    controller.gamepad = Gamepad()
+    controller._previous_buttons = {}
+    controller._previous_hat = (0, 0)
+    controller._previous_dpad_buttons = {direction: False for direction in ("left", "right", "up", "down")}
+    controller._previous_steering = 0.0
+    controller._input_baseline_pending = False
+
+    expected = {
+        pygame.CONTROLLER_BUTTON_DPAD_LEFT: "indicator_left",
+        pygame.CONTROLLER_BUTTON_DPAD_RIGHT: "indicator_right",
+        pygame.CONTROLLER_BUTTON_DPAD_UP: "headlight_cycle",
+        pygame.CONTROLLER_BUTTON_DPAD_DOWN: "indicator_cancel",
+    }
+    for button, action in expected.items():
+        controller.gamepad.buttons = {button}
+        assert action in controller._sample_joystick().pressed
+        controller.gamepad.buttons.clear()
+        controller._sample_joystick()
+    controller.gamepad.buttons = {pygame.CONTROLLER_BUTTON_START}
+    assert "open_settings" in controller._sample_joystick().pressed
+
+
+def test_changing_controller_device_index_reconnects_reader():
+    controller = ControllerReader.__new__(ControllerReader)
+    controller.config = ControllerConfig(joystick_index=0)
+    controller.joystick = None
+    controller._previous_buttons = {}
+    controller._previous_hat = (0, 0)
+    controller._previous_dpad_buttons = {direction: False for direction in ("left", "right", "up", "down")}
+    controller._previous_steering = 0.0
+    controller._input_baseline_pending = False
+    reconnects = []
+    controller._connect = lambda: reconnects.append(True)
+
+    controller.apply_config(ControllerConfig(joystick_index=1))
+
+    assert reconnects == [True]
+    assert controller._input_baseline_pending
 
 
 def test_keyboard_actions_remain_available_with_a_connected_controller():
