@@ -4,19 +4,31 @@ from __future__ import annotations
 
 import pygame
 
+from carla_drive.config import ControllerConfig
+from carla_drive.ui.controller_settings import ControllerSettings
+
 
 class PauseMenu:
-    ACTIONS = ("reverse_beep", "menu", "resume")
+    ACTIONS = ("reverse_beep", "controller_settings", "menu", "resume")
 
-    def __init__(self, screen: pygame.Surface, reverse_beep):
+    def __init__(
+        self,
+        screen: pygame.Surface,
+        reverse_beep,
+        controller_config: ControllerConfig | None = None,
+        controller_name: str = "",
+    ):
         self.screen = screen
         self.reverse_beep = reverse_beep
+        self.controller_config = controller_config or ControllerConfig()
+        self.controller_name = controller_name
+        self.quit_requested = False
         self.clock = pygame.time.Clock()
         self.title_font = pygame.font.SysFont("Segoe UI", 34, bold=True)
         self.body_font = pygame.font.SysFont("Segoe UI", 18)
         self.button_font = pygame.font.SysFont("Segoe UI", 20, bold=True)
         self.emoji_font = pygame.font.SysFont("Segoe UI Emoji", 22)
-        self.focus = 2
+        self.focus = 3
         self.buttons: list[tuple[str, pygame.Rect]] = []
 
     def run(self) -> str:
@@ -56,6 +68,16 @@ class PauseMenu:
         if action == "reverse_beep":
             self.reverse_beep.toggle_muted()
             return None
+        if action == "controller_settings":
+            dialog = ControllerSettings(self.screen, self.controller_config, controller_name=self.controller_name)
+            updated = dialog.run()
+            pygame.display.set_caption("CARLA Drive | Paused")
+            if dialog.quit_requested:
+                self.quit_requested = True
+                return "quit"
+            if updated is not None:
+                self.controller_config = updated
+            return None
         if action == "menu":
             return "menu"
         return "resume"
@@ -64,7 +86,7 @@ class PauseMenu:
         width, height = self.screen.get_size()
         self.screen.fill((5, 12, 20))
         pygame.draw.rect(self.screen, (10, 25, 37), (0, 0, width, 4))
-        card = pygame.Rect(width // 2 - 250, height // 2 - 205, 500, 410)
+        card = pygame.Rect(width // 2 - 250, height // 2 - 230, 500, 460)
         pygame.draw.rect(self.screen, (13, 27, 41), card, border_radius=20)
         pygame.draw.rect(self.screen, (41, 70, 86), card, width=1, border_radius=20)
         title = self.title_font.render("PAUSED", True, (237, 245, 248))
@@ -74,13 +96,14 @@ class PauseMenu:
 
         labels = (
             "Unmute reverse beep" if self.reverse_beep.muted else "Mute reverse beep",
+            "Controller settings",
             "Return to session setup",
             "Resume driving",
         )
-        icons = ("🔇" if self.reverse_beep.muted else "🔊", "↩", "▶")
+        icons = ("🔇" if self.reverse_beep.muted else "🔊", "🎮", "↩", "▶")
         self.buttons = []
         for index, (action, label, icon) in enumerate(zip(self.ACTIONS, labels, icons)):
-            rect = pygame.Rect(card.x + 42, card.y + 130 + index * 74, card.w - 84, 58)
+            rect = pygame.Rect(card.x + 42, card.y + 122 + index * 66, card.w - 84, 54)
             self.buttons.append((action, rect))
             focused = index == self.focus
             fill = (27, 63, 73) if focused else (19, 39, 53)
