@@ -51,7 +51,8 @@ lidar:
   display_range_m: 32.0 # Top-down zoom range; does not shorten the sensor range.
   points_per_second: 60000
   rotation_frequency_hz: 10.0
-  display_points: 1000
+  display_points: 2500
+  persistence_seconds: 0.35
   upper_fov: 10.0
   lower_fov: -30.0
 
@@ -86,6 +87,7 @@ controller:
   steering_axis_inverted: false
   throttle_axis: 5
   brake_axis: 4
+  steering_sensitivity: 1.0
   steering_deadzone: 0.06
   trigger_deadzone: 0.04
   steering_response: 1.35
@@ -101,6 +103,12 @@ controller:
   reset_button: 3
   pause_button: 7
   horn_button: 9
+  settings_button: -1
+  dpad_mode: auto
   dpad_hat: 0
+  dpad_left_button: 13
+  dpad_right_button: 14
+  dpad_up_button: 11
+  dpad_down_button: 12
   require_stop_for_reverse: true
   reverse_stop_speed_mps: 0.8
