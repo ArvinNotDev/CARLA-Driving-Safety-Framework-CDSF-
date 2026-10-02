@@ -20,7 +20,7 @@ from carla_drive.domain import CameraMode, DrivingSnapshot
 from carla_drive.input.controller import ControllerReader
 from carla_drive.sensors.monitor import MonitorSensors
 from carla_drive.safety.kinematic_collision import KinematicCollisionDetector, is_reportable_collision
-from carla_drive.ui.audio import DrivingAudio
+from carla_drive.ui.audio import ReverseBeep
 from carla_drive.ui.dashboard import Dashboard
 from carla_drive.ui.launcher import Launcher
 from carla_drive.ui.pause_menu import PauseMenu
@@ -49,11 +49,11 @@ def run_application(config: AppConfig) -> int:
     pygame.display.set_caption("CARLA Drive")
     screen = pygame.display.set_mode((config.window.width, config.window.height))
     try:
-        muted = False
+        reverse_beep_muted = False
         while True:
             session: CarlaSession | None = None
             controller: ControllerReader | None = None
-            audio: DrivingAudio | None = None
+            reverse_beep: ReverseBeep | None = None
             action = "quit"
             try:
                 session = _connect_with_retry(screen, config)
@@ -89,9 +89,8 @@ def run_application(config: AppConfig) -> int:
                 camera = CameraRig(session, config.camera)
                 sensors = MonitorSensors(session, config)
                 dashboard = Dashboard(screen, config)
-                audio = DrivingAudio(config.rear_parking)
-                audio.set_muted(muted)
-                audio.play_startup()
+                reverse_beep = ReverseBeep(config.rear_parking)
+                reverse_beep.set_muted(reverse_beep_muted)
                 pygame.display.set_caption("CARLA Drive | Manual Session")
                 LOG.info(
                     "Session started: map=%s, weather=%s, time=%s, vehicle=%s, traffic=%d, pedestrians=%d",
@@ -102,15 +101,15 @@ def run_application(config: AppConfig) -> int:
                     selected.traffic_vehicles,
                     selected.pedestrians,
                 )
-                action = run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config)
-                muted = audio.muted
+                action = run_driving_loop(session, controller, camera, sensors, dashboard, reverse_beep, screen, config)
+                reverse_beep_muted = reverse_beep.muted
             except (RuntimeError, ValueError) as exc:
                 LOG.error("CARLA Drive could not start: %s", exc)
                 print(f"CARLA Drive stopped: {exc}", file=sys.stderr)
                 return 1
             finally:
-                if audio:
-                    audio.close()
+                if reverse_beep:
+                    reverse_beep.close()
                 if controller:
                     controller.close()
                 if session:
@@ -234,7 +233,7 @@ def _connect_with_retry(screen: pygame.Surface, config: AppConfig) -> CarlaSessi
         clock.tick(30)
 
 
-def run_driving_loop(session, controller, camera, sensors, dashboard, audio, screen, config) -> str:
+def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_beep, screen, config) -> str:
     clock = pygame.time.Clock()
     reverse = False
     lights = EgoLightState()
@@ -254,9 +253,9 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
                 return "quit"
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    audio.pause_vehicle_audio()
+                    reverse_beep.pause()
                     session.set_paused(True)
-                    action = PauseMenu(screen, audio).run()
+                    action = PauseMenu(screen, reverse_beep).run()
                     pygame.display.set_caption("CARLA Drive | Manual Session")
                     if action != "resume":
                         return action
@@ -294,7 +293,6 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             speed = session.vehicle_speed_mps()
             if not config.controller.require_stop_for_reverse or speed <= config.controller.reverse_stop_speed_mps:
                 reverse = not reverse
-                audio.play_shift()
                 status = "Reverse" if reverse else "Drive"
             else:
                 status = "Stop before changing direction"
@@ -324,7 +322,10 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             applied_steering, applied_throttle, applied_brake = control.steering, control.throttle, control.brake
             if config.carla.synchronous_mode and now >= next_tick_at:
                 session.tick()
-                next_tick_at = time.monotonic() + step_seconds
+                tick_finished_at = time.monotonic()
+                next_tick_at += step_seconds
+                if next_tick_at <= tick_finished_at:
+                    next_tick_at = tick_finished_at + step_seconds
 
         rear = sensors.rear_distance(now)
         current_vehicle_id = session.ego_vehicle.id if session.ego_vehicle else None
@@ -365,11 +366,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, audio, scr
             )
             status = f"COLLISION WARNING | drop {speed_drop_kmh:.0f} km/h | confidence {collision_event.impact_score:.0%}"
             status_until = time.monotonic() + 3.0
-            audio.play_collision_alert()
-        audio.set_horn(control.horn and not paused)
-        audio.update_engine(applied_throttle, vehicle.speed_kmh)
-        audio.update_indicators("left" if lights.left_indicator else "right" if lights.right_indicator else None)
-        audio.update(reverse and not paused, rear.closest_m)
+        reverse_beep.update(reverse and not paused, rear.closest_m)
         dashboard.render(
             snapshot,
             camera.latest_frame(),
