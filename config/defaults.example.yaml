@@ -59,17 +59,18 @@ lidar:
 perception:
   enabled: true
   model_path: YOLOPv2.onnx
-  input_size: 640
+  input_size: 320
   confidence_threshold: 0.25
   iou_threshold: 0.45
-  camera_width: 1280
-  camera_height: 720
+  camera_width: 640
+  camera_height: 360
   camera_fov: 120.0
   camera_x: 1.1
   camera_y: 0.0
   camera_z: 1.8
   camera_pitch: -3.0
-  sensor_tick_seconds: 0.1
+  sensor_tick_seconds: 1.0
+  inference_interval_seconds: 1.0
 
 rear_parking:
   enabled: true

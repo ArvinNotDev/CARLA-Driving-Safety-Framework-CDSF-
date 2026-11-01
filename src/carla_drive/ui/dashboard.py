@@ -34,6 +34,8 @@ class Dashboard:
         self._lidar_surface: pygame.Surface | None = None
         self._perception_key: float | None = None
         self._perception_surface: pygame.Surface | None = None
+        self._perception_scaled_key: tuple[float, tuple[int, int]] | None = None
+        self._perception_scaled: pygame.Surface | None = None
         self._edge_shade_size: tuple[int, int] | None = None
         self._edge_shade: pygame.Surface | None = None
 
@@ -76,7 +78,7 @@ class Dashboard:
         self._text("YOLOPv2  /  PERCEPTION OUTPUT", (20, 18), self.font, (228, 241, 244))
         camera = self.config.perception
         self._text(
-            f"FRONT ROOF CAMERA  /  {camera.camera_fov:.0f}° FOV  /  {camera.camera_width}×{camera.camera_height}",
+            f"FRONT ROOF  /  {camera.camera_width}×{camera.camera_height}  /  INPUT {camera.input_size}  /  {1.0 / camera.inference_interval_seconds:.0f} FPS  /  {camera.camera_fov:.0f}° FOV",
             (20, 44), self.small, (128, 157, 169),
         )
 
@@ -116,9 +118,13 @@ class Dashboard:
             pixels[lanes] = (250, 215, 93)
             self._perception_surface = pygame.surfarray.make_surface(np.swapaxes(pixels, 0, 1))
             self._perception_key = result.received_at
-        if self._perception_surface is not None:
-            surface = pygame.transform.smoothscale(self._perception_surface, draw_rect.size)
-            self.screen.blit(surface, draw_rect)
+            self._perception_scaled_key = None
+        scale_key = (result.received_at, draw_rect.size)
+        if self._perception_surface is not None and scale_key != self._perception_scaled_key:
+            self._perception_scaled = pygame.transform.smoothscale(self._perception_surface, draw_rect.size)
+            self._perception_scaled_key = scale_key
+        if self._perception_scaled is not None:
+            self.screen.blit(self._perception_scaled, draw_rect)
 
         palette = (
             (80, 220, 255), (255, 180, 68), (255, 91, 86), (100, 236, 149),

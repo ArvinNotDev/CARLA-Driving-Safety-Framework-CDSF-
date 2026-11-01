@@ -81,17 +81,18 @@ class LidarConfig:
 class PerceptionConfig:
     enabled: bool = True
     model_path: str = "YOLOPv2.onnx"
-    input_size: int = 640
+    input_size: int = 320
     confidence_threshold: float = 0.25
     iou_threshold: float = 0.45
-    camera_width: int = 1280
-    camera_height: int = 720
+    camera_width: int = 640
+    camera_height: int = 360
     camera_fov: float = 120.0
     camera_x: float = 1.1
     camera_y: float = 0.0
     camera_z: float = 1.8
     camera_pitch: float = -3.0
-    sensor_tick_seconds: float = 0.1
+    sensor_tick_seconds: float = 1.0
+    inference_interval_seconds: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -262,6 +263,8 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Perception camera_fov must be between 30 and 150 degrees.")
     if not 0.0 < perception.sensor_tick_seconds <= 1.0:
         raise ValueError("perception.sensor_tick_seconds must be greater than 0 and at most 1.")
+    if not 0.1 <= perception.inference_interval_seconds <= 10.0:
+        raise ValueError("perception.inference_interval_seconds must be between 0.1 and 10 seconds.")
     if not 0.0 < perception.confidence_threshold <= 1.0:
         raise ValueError("perception.confidence_threshold must be in the range (0, 1].")
     if not 0.0 < perception.iou_threshold <= 1.0:

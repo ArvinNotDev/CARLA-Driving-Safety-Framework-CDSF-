@@ -62,7 +62,7 @@ class YoloPv2Model:
         self._iou_threshold = config.iou_threshold
 
         options = ort.SessionOptions()
-        options.intra_op_num_threads = 2
+        options.intra_op_num_threads = 1
         options.inter_op_num_threads = 1
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self._session = ort.InferenceSession(
@@ -265,6 +265,7 @@ class PerceptionSystem:
         self._result_lock = threading.Lock()
         self._result: PerceptionFrame | None = None
         self._status = "DISABLED" if not self.config.enabled else "INITIALIZING"
+        self._model_path: Path | None = None
         if not self.config.enabled:
             return
 
@@ -274,12 +275,11 @@ class PerceptionSystem:
         try:
             if not model_path.is_file():
                 raise FileNotFoundError(f"Model file not found: {model_path}")
-            self._model = YoloPv2Model(model_path, self.config)
+            self._model_path = model_path
             self._create_camera()
-            self._status = "WAITING FOR FRONT CAMERA"
+            self._status = "LOADING YOLOPV2"
             self._worker = threading.Thread(target=self._process_frames, name="yolopv2-inference", daemon=True)
             self._worker.start()
-            LOG.info("YOLOPv2 loaded from %s", model_path)
         except Exception as exc:
             self._model = None
             self._status = f"MODEL UNAVAILABLE: {exc}"
@@ -310,15 +310,34 @@ class PerceptionSystem:
         self._frame_ready.set()
 
     def _process_frames(self) -> None:
+        try:
+            self._model = YoloPv2Model(self._model_path, self.config)
+        except Exception as exc:
+            with self._result_lock:
+                self._status = f"MODEL UNAVAILABLE: {exc}"
+            LOG.exception("Could not load YOLOPv2 perception model")
+            return
+        with self._result_lock:
+            self._status = "WAITING FOR FRONT CAMERA"
+        LOG.info("YOLOPv2 loaded from %s", self._model_path)
+
         last_timestamp = 0.0
+        last_inference_started = 0.0
         while not self._stop.is_set():
             if not self._frame_ready.wait(timeout=0.5):
                 continue
             self._frame_ready.clear()
+            remaining = self.config.inference_interval_seconds - (time.monotonic() - last_inference_started)
+            if remaining > 0.0:
+                self._frame_ready.wait(timeout=remaining)
+                self._frame_ready.clear()
+            if self._stop.is_set():
+                break
             image, timestamp = self._frame.read()
             if image is None or timestamp <= last_timestamp:
                 continue
             last_timestamp = timestamp
+            last_inference_started = time.monotonic()
             try:
                 result = self._model.infer(image)
             except Exception as exc:
@@ -342,4 +361,4 @@ class PerceptionSystem:
         self._stop.set()
         self._frame_ready.set()
         if self._worker is not None:
-            self._worker.join(timeout=5.0)
+            self._worker.join(timeout=0.1)

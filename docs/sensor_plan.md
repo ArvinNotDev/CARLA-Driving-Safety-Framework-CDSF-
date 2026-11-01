@@ -38,7 +38,7 @@ The LiDAR callback runs at the simulation step interval and combines partial rot
 
 ## YOLOPv2 perception
 
-`PerceptionSystem` owns a separate RGB camera mounted near the front roofline (1.8 m, wide 120-degree field of view by default). It loads the local, Git-ignored `YOLOPv2.onnx` model and processes only the newest captured frame in a worker thread, so inference does not block the synchronous CARLA tick or Pygame render loop. The output canvas shows all decoded object detections with class/confidence labels, the driving-area mask, and lane-line mask; the existing LiDAR view stays beside it. Press `V` to switch back to the normal driving dashboard. If the model file or runtime is unavailable, the session continues and the perception view reports its status. Perception output is visualization only and never changes controls.
+`PerceptionSystem` owns a separate RGB camera mounted near the front roofline (1.8 m, wide 120-degree field of view by default). Its default capture is 640×360 and its model input is 320×320. It loads the local, Git-ignored `YOLOPv2.onnx` model on a worker thread, then processes at most one frame per second; only the newest frame is kept. Model loading and inference do not block the synchronous CARLA tick or Pygame render loop. The output canvas shows all decoded object detections with class/confidence labels, the driving-area mask, and lane-line mask; the existing LiDAR view stays beside it. Press `V` to switch back to the normal driving dashboard. If the model file or runtime is unavailable, the session continues and the perception view reports its status. Perception output is visualization only and never changes controls.
 
 ## Kinematic impact detection
 
