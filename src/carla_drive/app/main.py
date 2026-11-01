@@ -18,6 +18,7 @@ from carla_drive.carla.lights import EgoLightState
 from carla_drive.carla.session import CarlaSession, discover_weather_presets
 from carla_drive.config import AppConfig, load_config
 from carla_drive.domain import CameraMode, DrivingSnapshot
+from carla_drive.perception import PerceptionSystem
 from carla_drive.input.controller import ControllerReader
 from carla_drive.input.preferences import load_controller_preferences
 from carla_drive.sensors.monitor import MonitorSensors
@@ -58,6 +59,7 @@ def run_application(config: AppConfig) -> int:
             session: CarlaSession | None = None
             controller: ControllerReader | None = None
             reverse_beep: ReverseBeep | None = None
+            perception: PerceptionSystem | None = None
             action = "quit"
             try:
                 session = _connect_with_retry(screen, config)
@@ -93,6 +95,7 @@ def run_application(config: AppConfig) -> int:
 
                 controller = ControllerReader(controller_config)
                 camera = CameraRig(session, config.camera)
+                perception = PerceptionSystem(session, config)
                 sensors = MonitorSensors(session, config)
                 dashboard = Dashboard(screen, config)
                 reverse_beep = ReverseBeep(config.rear_parking)
@@ -109,7 +112,7 @@ def run_application(config: AppConfig) -> int:
                 )
                 action = run_driving_loop(
                     session, controller, camera, sensors, dashboard, reverse_beep, screen,
-                    replace(config, controller=controller_config),
+                    replace(config, controller=controller_config), perception,
                 )
                 controller_config = controller.config
                 reverse_beep_muted = reverse_beep.muted
@@ -122,6 +125,8 @@ def run_application(config: AppConfig) -> int:
                     reverse_beep.close()
                 if controller:
                     controller.close()
+                if perception:
+                    perception.close()
                 if session:
                     session.close()
             if action != "menu":
@@ -243,7 +248,7 @@ def _connect_with_retry(screen: pygame.Surface, config: AppConfig) -> CarlaSessi
         clock.tick(30)
 
 
-def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_beep, screen, config) -> str:
+def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_beep, screen, config, perception=None) -> str:
     clock = pygame.time.Clock()
     reverse = False
     lights = EgoLightState()
@@ -253,6 +258,7 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
     status = ""
     status_until = 0.0
     control = None
+    perception_view = config.perception.enabled
     next_tick_at = time.monotonic()
     step_seconds = config.carla.fixed_delta_seconds
 
@@ -282,6 +288,10 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
                     camera.set_mode(CameraMode.CHASE)
                 elif event.key == pygame.K_3:
                     camera.set_mode(CameraMode.OVERHEAD)
+                elif event.key == pygame.K_v:
+                    perception_view = not perception_view
+                    status = "YOLOPv2 output view" if perception_view else "Driving camera view"
+                    status_until = time.monotonic() + 1.5
 
         control = controller.sample(events)
         if "open_settings" in control.pressed:
@@ -410,6 +420,8 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
             controller.name,
             paused,
             status,
+            perception_state=perception.latest() if perception is not None else (None, "DISABLED"),
+            perception_view=perception_view,
         )
         pygame.display.flip()
         clock.tick(config.window.render_fps)

@@ -99,9 +99,7 @@ The main loop should not contain:
 
 ## Threading
 
-Do not add threads by default.
-
-Use CARLA's sensor callback system to capture incoming data into bounded/latest-frame state. Pygame rendering stays in the main thread.
+Use CARLA's sensor callback system to capture incoming data into bounded/latest-frame state. Pygame rendering stays in the main thread. The YOLOPv2 inference worker is a targeted exception: it consumes only the latest camera frame so CPU inference cannot block simulation or UI updates.
 
 Introduce a worker only if a measured bottleneck justifies it, and document the ownership of any shared data.
 
@@ -109,4 +107,4 @@ Introduce a worker only if a measured bottleneck justifies it, and document the 
 
 The entry point is `carla_drive.app.main`. The launcher collects a `SessionConfig`; `CarlaSession` loads the selected map/weather and registers every spawned actor. `CameraRig` owns one transform-switching main camera. `MonitorSensors` owns passive dashboard sensors and publishes latest-frame or latest-distance snapshots. `Dashboard` receives those snapshots and never queries CARLA actors.
 
-The synchronous world advances through `CarlaSession.tick()`: once during pedestrian startup after controller actors are spawned, then at the configured fixed step in `run_driving_loop`. Pygame renders at its own target frame rate. Camera and LiDAR callbacks replace bounded latest-frame values; they do not render or mutate controls.
+The synchronous world advances through `CarlaSession.tick()`: once during pedestrian startup after controller actors are spawned, then at the configured fixed step in `run_driving_loop`. Pygame renders at its own target frame rate. Camera and LiDAR callbacks replace bounded latest-frame values; they do not render or mutate controls. The YOLOPv2 worker takes the newest front-camera frame when available and publishes detection and segmentation snapshots for the dashboard.

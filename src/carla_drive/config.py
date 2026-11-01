@@ -78,6 +78,23 @@ class LidarConfig:
 
 
 @dataclass(frozen=True)
+class PerceptionConfig:
+    enabled: bool = True
+    model_path: str = "YOLOPv2.onnx"
+    input_size: int = 640
+    confidence_threshold: float = 0.25
+    iou_threshold: float = 0.45
+    camera_width: int = 1280
+    camera_height: int = 720
+    camera_fov: float = 120.0
+    camera_x: float = 1.1
+    camera_y: float = 0.0
+    camera_z: float = 1.8
+    camera_pitch: float = -3.0
+    sensor_tick_seconds: float = 0.1
+
+
+@dataclass(frozen=True)
 class RearParkingConfig:
     enabled: bool = True
     distance_m: float = 6.0
@@ -147,6 +164,7 @@ class AppConfig:
     session: SessionConfig = field(default_factory=SessionConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     lidar: LidarConfig = field(default_factory=LidarConfig)
+    perception: PerceptionConfig = field(default_factory=PerceptionConfig)
     rear_parking: RearParkingConfig = field(default_factory=RearParkingConfig)
     safety: KinematicCollisionConfig = field(default_factory=KinematicCollisionConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
@@ -183,6 +201,7 @@ def load_config(path: str | Path) -> AppConfig:
         "session": (SessionConfig, {item.name for item in fields(SessionConfig)}),
         "camera": (CameraConfig, {item.name for item in fields(CameraConfig)}),
         "lidar": (LidarConfig, {item.name for item in fields(LidarConfig)}),
+        "perception": (PerceptionConfig, {item.name for item in fields(PerceptionConfig)}),
         "rear_parking": (RearParkingConfig, {item.name for item in fields(RearParkingConfig)}),
         "safety": (KinematicCollisionConfig, {item.name for item in fields(KinematicCollisionConfig)}),
         "controller": (ControllerConfig, {item.name for item in fields(ControllerConfig)}),
@@ -234,6 +253,19 @@ def validate_config(config: AppConfig) -> None:
         raise ValueError("Camera resolutions must be positive.")
     if not 30.0 <= config.camera.fov <= 150.0:
         raise ValueError("Camera fov must be between 30 and 150 degrees.")
+    perception = config.perception
+    if perception.input_size < 320 or perception.input_size % 32:
+        raise ValueError("perception.input_size must be at least 320 and divisible by 32.")
+    if min(perception.camera_width, perception.camera_height) <= 0:
+        raise ValueError("Perception camera resolutions must be positive.")
+    if not 30.0 <= perception.camera_fov <= 150.0:
+        raise ValueError("Perception camera_fov must be between 30 and 150 degrees.")
+    if not 0.0 < perception.sensor_tick_seconds <= 1.0:
+        raise ValueError("perception.sensor_tick_seconds must be greater than 0 and at most 1.")
+    if not 0.0 < perception.confidence_threshold <= 1.0:
+        raise ValueError("perception.confidence_threshold must be in the range (0, 1].")
+    if not 0.0 < perception.iou_threshold <= 1.0:
+        raise ValueError("perception.iou_threshold must be in the range (0, 1].")
     if min(config.session.traffic_vehicles, config.session.pedestrians) < 0:
         raise ValueError("Traffic and pedestrian counts cannot be negative.")
     if max(config.session.traffic_vehicles, config.session.pedestrians) > 200:

@@ -52,6 +52,12 @@ Controller preferences can be edited from the setup screen or the Esc menu and a
 
 The only application sound is the reverse parking beep; the pause menu's speaker button mutes or unmutes that beep. The other pause actions open controller settings, return to session setup, or resume driving. Keyboard actions also work while a controller is connected. The default synchronous simulation rate is 30 Hz, rendering is capped at 60 FPS, and LiDAR partial scans are accumulated in the moving sensor frame for a short configurable persistence window (`lidar.persistence_seconds`) to keep its visualization continuous. Collision warnings are visual only and appear at or above `safety.minimum_impact_score` (default 0.80).
 
+### YOLOPv2 perception view
+
+Place the local `YOLOPv2.onnx` file in the project root. The app reads it with ONNX Runtime and OpenCV, which are installed with the regular project dependencies; the root `.onnx` file is ignored by Git. A separate 120° RGB camera sits near the front roofline and feeds the model at 10 frames per second. The default view draws every detected COCO object with its class and confidence, plus the driving-area and lane-line masks on a black canvas. The existing 360° LiDAR panel remains in the upper-right. Press **V** to switch between the perception output and the regular driving dashboard. If the model is absent or cannot load, the driving session still starts and the perception view displays the model status.
+
+The model settings live under `perception` in the YAML config. Set `enabled: false` to start in the regular driving view, or change `model_path` to point to another local ONNX file. These outputs are displayed only and do not affect vehicle control.
+
 ## What this project is
 
 This project is the foundation for a long-lived CARLA driving application. Phase 1 is intentionally focused on **making CARLA feel like a proper driving game / simulator UI**, while keeping the architecture ready for later perception, assistance, and autonomous-driving features.

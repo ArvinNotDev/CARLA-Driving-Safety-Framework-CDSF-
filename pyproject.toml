@@ -11,6 +11,8 @@ dependencies = [
   "numpy>=1.26,<3",
   "pygame>=2.5,<3",
   "PyYAML>=6,<7",
+  "onnxruntime>=1.17,<2",
+  "opencv-python-headless>=4.8,<5",
 ]
 
 [project.optional-dependencies]

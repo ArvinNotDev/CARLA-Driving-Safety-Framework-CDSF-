@@ -12,5 +12,6 @@ venv/
 *.log
 runs/
 logs/
+/*.onnx
 .DS_Store
 Thumbs.db

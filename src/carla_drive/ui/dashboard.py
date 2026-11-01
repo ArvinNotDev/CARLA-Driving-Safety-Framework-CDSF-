@@ -9,6 +9,7 @@ import pygame
 
 from carla_drive.config import AppConfig
 from carla_drive.domain import CameraMode, DrivingSnapshot
+from carla_drive.perception import PerceptionFrame
 from carla_drive.sensors.parking import parking_side_fills
 
 
@@ -31,6 +32,8 @@ class Dashboard:
         self._mirror_scaled: pygame.Surface | None = None
         self._lidar_key: float | None = None
         self._lidar_surface: pygame.Surface | None = None
+        self._perception_key: float | None = None
+        self._perception_surface: pygame.Surface | None = None
         self._edge_shade_size: tuple[int, int] | None = None
         self._edge_shade: pygame.Surface | None = None
 
@@ -43,24 +46,122 @@ class Dashboard:
         controller_name: str,
         paused: bool,
         status: str,
+        perception_state: tuple[PerceptionFrame | None, str] = (None, "DISABLED"),
+        perception_view: bool = False,
     ) -> None:
         width, height = self.screen.get_size()
-        self.screen.fill((5, 10, 16))
-        main_surface = self._camera_surface(main_frame, mirror=False, allow_stale=paused)
-        if main_surface is not None:
-            cache_key = (main_frame[1], (width, height))
-            if cache_key != self._main_scaled_key:
-                self._main_scaled = pygame.transform.scale(main_surface, (width, height))
-                self._main_scaled_key = cache_key
-            self.screen.blit(self._main_scaled, (0, 0))
+        if perception_view:
+            self._draw_perception_view(width, height, perception_state, lidar_frame, paused)
         else:
-            self._text("WAITING FOR CARLA CAMERA", (width // 2, height // 2), self.font, (202, 220, 228), centered=True)
-        self._draw_edge_shade(width, height)
-        self._draw_status(width, status, paused)
-        self._draw_mirror(width, mirror_frame, paused)
+            self.screen.fill((5, 10, 16))
+            main_surface = self._camera_surface(main_frame, mirror=False, allow_stale=paused)
+            if main_surface is not None:
+                cache_key = (main_frame[1], (width, height))
+                if cache_key != self._main_scaled_key:
+                    self._main_scaled = pygame.transform.scale(main_surface, (width, height))
+                    self._main_scaled_key = cache_key
+                self.screen.blit(self._main_scaled, (0, 0))
+            else:
+                self._text("WAITING FOR CARLA CAMERA", (width // 2, height // 2), self.font, (202, 220, 228), centered=True)
+            self._draw_edge_shade(width, height)
+            self._draw_status(width, status, paused)
+            self._draw_mirror(width, mirror_frame, paused)
+            self._draw_lidar(width, lidar_frame, paused)
+            self._draw_parking_bar(width, snapshot)
+            self._draw_telemetry(width, height, snapshot, controller_name)
+
+    def _draw_perception_view(self, width: int, height: int, state, lidar_frame, paused: bool) -> None:
+        result, status = state
+        self.screen.fill((0, 0, 0))
+        self._text("YOLOPv2  /  PERCEPTION OUTPUT", (20, 18), self.font, (228, 241, 244))
+        camera = self.config.perception
+        self._text(
+            f"FRONT ROOF CAMERA  /  {camera.camera_fov:.0f}° FOV  /  {camera.camera_width}×{camera.camera_height}",
+            (20, 44), self.small, (128, 157, 169),
+        )
+
+        status_color = (89, 220, 167) if status == "LIVE" else (242, 184, 111)
+        status_label = "HOLD" if paused and status == "LIVE" else status
+        self._text(status_label[:34], (20, 68), self.small, status_color)
+        self._text("V  CAMERA VIEW", (width - 368, 18), self.small, (155, 183, 193))
+
+        viewport = pygame.Rect(18, 92, width - 370, height - 116)
+        pygame.draw.rect(self.screen, (4, 7, 9), viewport)
+        pygame.draw.rect(self.screen, (38, 55, 63), viewport, width=1)
+        if result is not None:
+            self._draw_masks_and_boxes(result, viewport)
+            self._text(
+                f"{len(result.detections)} OBJECTS  /  {result.inference_ms:.0f} ms",
+                (viewport.x + 12, viewport.bottom - 24), self.small, (197, 218, 221),
+            )
+        else:
+            self._text("WAITING FOR MODEL OUTPUT", viewport.center, self.small, (124, 151, 160), centered=True)
+
         self._draw_lidar(width, lidar_frame, paused)
-        self._draw_parking_bar(width, snapshot)
-        self._draw_telemetry(width, height, snapshot, controller_name)
+        self._draw_perception_summary(width, height, result)
+
+    def _draw_masks_and_boxes(self, result: PerceptionFrame, viewport: pygame.Rect) -> None:
+        source_size = (result.source_width, result.source_height)
+        scale = min(viewport.width / source_size[0], viewport.height / source_size[1])
+        draw_width = max(1, int(source_size[0] * scale))
+        draw_height = max(1, int(source_size[1] * scale))
+        draw_rect = pygame.Rect(0, 0, draw_width, draw_height)
+        draw_rect.center = viewport.center
+
+        if result.received_at != self._perception_key:
+            road = result.driving_area >= 0.5
+            lanes = result.lane_lines >= 0.45
+            pixels = np.zeros((result.source_height, result.source_width, 3), dtype=np.uint8)
+            pixels[road] = (0, 78, 64)
+            pixels[lanes] = (250, 215, 93)
+            self._perception_surface = pygame.surfarray.make_surface(np.swapaxes(pixels, 0, 1))
+            self._perception_key = result.received_at
+        if self._perception_surface is not None:
+            surface = pygame.transform.smoothscale(self._perception_surface, draw_rect.size)
+            self.screen.blit(surface, draw_rect)
+
+        palette = (
+            (80, 220, 255), (255, 180, 68), (255, 91, 86), (100, 236, 149),
+            (189, 139, 255), (255, 220, 92), (85, 171, 255), (255, 119, 190),
+        )
+        scale_x = draw_width / result.source_width
+        scale_y = draw_height / result.source_height
+        for detection in result.detections:
+            x1, y1, x2, y2 = detection.box
+            box = pygame.Rect(
+                draw_rect.x + int(x1 * scale_x),
+                draw_rect.y + int(y1 * scale_y),
+                max(1, int((x2 - x1) * scale_x)),
+                max(1, int((y2 - y1) * scale_y)),
+            )
+            color = palette[detection.class_id % len(palette)]
+            pygame.draw.rect(self.screen, color, box, width=2)
+            label = f"{detection.class_name} {detection.confidence:.2f}"
+            text = self.small.render(label, True, (245, 249, 250))
+            label_y = max(draw_rect.y, box.y - text.get_height() - 3)
+            label_x = min(box.x, draw_rect.right - text.get_width() - 8)
+            label_rect = pygame.Rect(label_x, label_y, text.get_width() + 8, text.get_height() + 4)
+            pygame.draw.rect(self.screen, (7, 14, 17), label_rect)
+            self.screen.blit(text, (label_rect.x + 4, label_rect.y + 2))
+
+    def _draw_perception_summary(self, width: int, height: int, result: PerceptionFrame | None) -> None:
+        x = width - 328
+        y = 344
+        panel = pygame.Rect(x, y, 306, height - y - 18)
+        pygame.draw.rect(self.screen, (5, 12, 16), panel, border_radius=10)
+        pygame.draw.rect(self.screen, (42, 67, 76), panel, width=1, border_radius=10)
+        self._text("MODEL OUTPUTS", (x + 14, y + 12), self.font, (213, 230, 234))
+        self._text("770  OBJECT DETECTIONS", (x + 14, y + 48), self.small, (96, 218, 182))
+        self._text("677  DRIVING-AREA MASK", (x + 14, y + 76), self.small, (96, 218, 182))
+        self._text("769  LANE-LINE MASK", (x + 14, y + 104), self.small, (246, 212, 99))
+        if result is not None:
+            road_percent = float(np.count_nonzero(result.driving_area >= 0.5)) * 100.0 / result.driving_area.size
+            lane_percent = float(np.count_nonzero(result.lane_lines >= 0.45)) * 100.0 / result.lane_lines.size
+            self._text(f"DETECTIONS  {len(result.detections)}", (x + 14, y + 150), self.small, (219, 231, 233))
+            self._text(f"ROAD PIXELS  {road_percent:.1f}%", (x + 14, y + 177), self.small, (219, 231, 233))
+            self._text(f"LANE PIXELS  {lane_percent:.1f}%", (x + 14, y + 204), self.small, (219, 231, 233))
+            self._text("ROAD AREA", (x + 14, y + 244), self.lidar_small, (0, 155, 127))
+            self._text("LANE LINES", (x + 128, y + 244), self.lidar_small, (246, 212, 99))
 
     def _camera_surface(self, frame, mirror: bool, allow_stale: bool = False) -> pygame.Surface | None:
         image, timestamp = frame
