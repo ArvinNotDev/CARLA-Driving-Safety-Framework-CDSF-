@@ -10,7 +10,6 @@ import pygame
 from carla_drive.config import AppConfig
 from carla_drive.domain import CameraMode, DrivingSnapshot
 from carla_drive.perception import PerceptionFrame
-from carla_drive.sensors.parking import parking_side_fills
 
 
 class Dashboard:
@@ -20,8 +19,9 @@ class Dashboard:
         self.font = pygame.font.Font(None, 22)
         self.small = pygame.font.Font(None, 18)
         self.lidar_small = pygame.font.Font(None, 14)
+        self.tiny = pygame.font.Font(None, 15)
+        self.title = pygame.font.Font(None, 28)
         self.speed_font = pygame.font.Font(None, 62)
-        self.gear_font = pygame.font.Font(None, 40)
         self._main_key: float | None = None
         self._main_surface: pygame.Surface | None = None
         self._main_scaled_key: tuple[float, tuple[int, int]] | None = None
@@ -30,14 +30,12 @@ class Dashboard:
         self._mirror_surface: pygame.Surface | None = None
         self._mirror_scaled_key: tuple[float, tuple[int, int]] | None = None
         self._mirror_scaled: pygame.Surface | None = None
-        self._lidar_key: float | None = None
+        self._lidar_key: tuple[float, tuple[int, int]] | None = None
         self._lidar_surface: pygame.Surface | None = None
         self._perception_key: float | None = None
         self._perception_surface: pygame.Surface | None = None
         self._perception_scaled_key: tuple[float, tuple[int, int]] | None = None
         self._perception_scaled: pygame.Surface | None = None
-        self._edge_shade_size: tuple[int, int] | None = None
-        self._edge_shade: pygame.Surface | None = None
 
     def render(
         self,
@@ -49,60 +47,307 @@ class Dashboard:
         paused: bool,
         status: str,
         perception_state: tuple[PerceptionFrame | None, str] = (None, "DISABLED"),
-        perception_view: bool = False,
     ) -> None:
         width, height = self.screen.get_size()
-        if perception_view:
-            self._draw_perception_view(width, height, perception_state, lidar_frame, paused)
-        else:
-            self.screen.fill((5, 10, 16))
-            main_surface = self._camera_surface(main_frame, mirror=False, allow_stale=paused)
-            if main_surface is not None:
-                cache_key = (main_frame[1], (width, height))
-                if cache_key != self._main_scaled_key:
-                    self._main_scaled = pygame.transform.scale(main_surface, (width, height))
-                    self._main_scaled_key = cache_key
-                self.screen.blit(self._main_scaled, (0, 0))
-            else:
-                self._text("WAITING FOR CARLA CAMERA", (width // 2, height // 2), self.font, (202, 220, 228), centered=True)
-            self._draw_edge_shade(width, height)
-            self._draw_status(width, status, paused)
-            self._draw_mirror(width, mirror_frame, paused)
-            self._draw_lidar(width, lidar_frame, paused)
-            self._draw_parking_bar(width, snapshot)
-            self._draw_telemetry(width, height, snapshot, controller_name)
+        self.screen.fill((4, 9, 16))
 
-    def _draw_perception_view(self, width: int, height: int, state, lidar_frame, paused: bool) -> None:
-        result, status = state
-        self.screen.fill((0, 0, 0))
-        self._text("YOLOPv2  /  PERCEPTION OUTPUT", (20, 18), self.font, (228, 241, 244))
-        camera = self.config.perception
-        self._text(
-            f"FRONT ROOF  /  {camera.camera_width}×{camera.camera_height}  /  INPUT {camera.input_size}  /  {1.0 / camera.inference_interval_seconds:.0f} FPS  /  {camera.camera_fov:.0f}° FOV",
-            (20, 44), self.small, (128, 157, 169),
+        margin, gap = 16, 12
+        left_width = max(170, int(width * 0.155))
+        right_width = max(194, int(width * 0.19))
+        center_width = width - 2 * margin - left_width - right_width - 2 * gap
+        content_y = 58
+        footer_y = height - 70
+        content_height = footer_y - content_y - 10
+        left_panel = pygame.Rect(margin, content_y, left_width, content_height)
+        center_panel = pygame.Rect(left_panel.right + gap, content_y, center_width, content_height)
+        right_panel = pygame.Rect(center_panel.right + gap, content_y, right_width, content_height)
+
+        result, perception_status = perception_state
+        self._draw_header(width, snapshot, paused, perception_status)
+        self._draw_lidar_sidebar(left_panel, lidar_frame, mirror_frame, snapshot, paused)
+        self._draw_camera_panel(center_panel, main_frame, snapshot, paused)
+        self._draw_ai_sidebar(right_panel, result, perception_status)
+        self._draw_footer(width, height, snapshot, controller_name, status, paused)
+
+    def _draw_header(self, width: int, snapshot: DrivingSnapshot, paused: bool, perception_status: str) -> None:
+        pygame.draw.rect(self.screen, (7, 16, 26), (0, 0, width, 51))
+        pygame.draw.line(self.screen, (52, 194, 177), (0, 0), (width, 0), 3)
+        self._text("CARLA DRIVE", (16, 8), self.title, (235, 245, 247))
+        self._text("DRIVER ASSIST  /  LIVE VEHICLE TELEMETRY", (18, 34), self.tiny, (119, 150, 164))
+
+        mode = snapshot.camera_mode.value.upper()
+        self._status_pill(width - 354, 13, "PAUSED" if paused else "SIMULATION LIVE", (244, 187, 102) if paused else (75, 215, 164))
+        model_state = (
+            "LIVE" if perception_status == "LIVE" else
+            "OFF" if perception_status == "DISABLED" else
+            "STALE" if perception_status.startswith("STALE") else
+            "ERROR" if "ERROR" in perception_status or "UNAVAILABLE" in perception_status else
+            "LOAD"
         )
+        model_color = (78, 216, 165) if model_state == "LIVE" else (145, 162, 171) if model_state == "OFF" else (243, 146, 120) if model_state == "ERROR" else (243, 181, 103)
+        self._status_pill(width - 174, 13, f"YOLO {model_state}", model_color)
+        self._text(f"CAMERA  {mode}", (width - 354, 33), self.tiny, (150, 177, 187))
+        self._text(f"INFERENCE  {1.0 / self.config.perception.inference_interval_seconds:.0f} HZ", (width - 174, 33), self.tiny, (150, 177, 187))
 
-        status_color = (89, 220, 167) if status == "LIVE" else (242, 184, 111)
-        status_label = "HOLD" if paused and status == "LIVE" else status
-        self._text(status_label[:34], (20, 68), self.small, status_color)
-        self._text("V  CAMERA VIEW", (width - 368, 18), self.small, (155, 183, 193))
+    def _status_pill(self, x: int, y: int, label: str, color: tuple[int, int, int]) -> None:
+        text_width = self.tiny.size(label)[0]
+        rect = pygame.Rect(x, y, text_width + 24, 22)
+        pygame.draw.rect(self.screen, (17, 37, 44), rect, border_radius=9)
+        pygame.draw.circle(self.screen, color, (x + 10, y + 11), 3)
+        self._text(label, (x + 18, y + 4), self.tiny, color)
 
-        viewport = pygame.Rect(18, 92, width - 370, height - 116)
-        pygame.draw.rect(self.screen, (4, 7, 9), viewport)
-        pygame.draw.rect(self.screen, (38, 55, 63), viewport, width=1)
-        if result is not None:
-            self._draw_masks_and_boxes(result, viewport)
-            self._text(
-                f"{len(result.detections)} OBJECTS  /  {result.inference_ms:.0f} ms",
-                (viewport.x + 12, viewport.bottom - 24), self.small, (197, 218, 221),
-            )
+    def _draw_camera_panel(self, panel: pygame.Rect, frame, snapshot: DrivingSnapshot, paused: bool) -> None:
+        self._panel(panel)
+        self._text("DRIVING CAMERA", (panel.x + 14, panel.y + 10), self.font, (223, 238, 242))
+        self._text("FRONT VIEW  /  LIVE SENSOR FEED", (panel.x + 14, panel.y + 31), self.tiny, (123, 153, 166))
+        mode = snapshot.camera_mode.value.upper()
+        mode_rect = pygame.Rect(panel.right - 117, panel.y + 10, 103, 24)
+        pygame.draw.rect(self.screen, (18, 43, 51), mode_rect, border_radius=8)
+        self._text(mode, mode_rect.center, self.tiny, (104, 218, 199), centered=True)
+
+        view_rect = pygame.Rect(panel.x + 10, panel.y + 54, panel.w - 20, panel.h - 92)
+        pygame.draw.rect(self.screen, (2, 6, 10), view_rect, border_radius=7)
+        surface = self._camera_surface(frame, mirror=False, allow_stale=paused)
+        if surface is None:
+            self._text("WAITING FOR FRONT CAMERA", view_rect.center, self.small, (133, 163, 176), centered=True)
         else:
-            self._text("WAITING FOR MODEL OUTPUT", viewport.center, self.small, (124, 151, 160), centered=True)
+            scale = min(view_rect.w / surface.get_width(), view_rect.h / surface.get_height())
+            size = (max(1, int(surface.get_width() * scale)), max(1, int(surface.get_height() * scale)))
+            cache_key = (frame[1], size)
+            if cache_key != self._main_scaled_key:
+                self._main_scaled = pygame.transform.scale(surface, size)
+                self._main_scaled_key = cache_key
+            destination = self._main_scaled.get_rect(center=view_rect.center)
+            self.screen.blit(self._main_scaled, destination)
+            age = max(0.0, time.monotonic() - frame[1])
+            live = age < 1.0 or paused
+            dot = (76, 218, 162) if live else (238, 171, 99)
+            pygame.draw.circle(self.screen, dot, (view_rect.x + 15, view_rect.y + 15), 4)
+            self._text("LIVE" if live else "STALE", (view_rect.x + 25, view_rect.y + 8), self.tiny, dot)
+        pygame.draw.rect(self.screen, (45, 68, 80), view_rect, width=1, border_radius=7)
+        self._text("WASD DRIVE   ·   1 / 2 / 3 CAMERA   ·   ESC PAUSE", (panel.x + 14, panel.bottom - 26), self.tiny, (129, 157, 169))
 
-        self._draw_lidar(width, lidar_frame, paused)
-        self._draw_perception_summary(width, height, result)
+    def _draw_lidar_sidebar(self, panel: pygame.Rect, lidar_frame, mirror_frame, snapshot: DrivingSnapshot, paused: bool) -> None:
+        self._panel(panel)
+        self._text("360° LiDAR", (panel.x + 12, panel.y + 10), self.font, (223, 238, 242))
+        points, timestamp = lidar_frame
+        cloud_available = (
+            self.config.lidar.enabled
+            and points is not None
+            and timestamp > 0.0
+        )
+        lidar_fresh = cloud_available and time.monotonic() - timestamp <= 1.5
+        lidar_live = lidar_fresh or (paused and cloud_available)
+        state = (
+            "OFF" if not self.config.lidar.enabled else
+            "LIVE" if lidar_fresh else
+            "HOLD" if paused and cloud_available else
+            "STALE" if cloud_available else
+            "NO DATA"
+        )
+        state_color = (145, 162, 171) if state in {"OFF", "NO DATA"} else (245, 190, 106) if state in {"HOLD", "STALE"} else (78, 216, 165)
+        badge = pygame.Rect(panel.right - 70, panel.y + 10, 58, 21)
+        pygame.draw.rect(self.screen, (18, 43, 47), badge, border_radius=8)
+        self._text(state, badge.center, self.tiny, state_color, centered=True)
+        self._text(f"TOP VIEW  /  {self.config.lidar.display_range_m:.0f} M", (panel.x + 12, panel.y + 32), self.tiny, (123, 153, 166))
 
-    def _draw_masks_and_boxes(self, result: PerceptionFrame, viewport: pygame.Rect) -> None:
+        radar_size = min(panel.w - 24, 176)
+        radar_rect = pygame.Rect(0, 0, radar_size, radar_size)
+        radar_rect.centerx = panel.centerx
+        radar_rect.y = panel.y + 52
+        lidar_key = (timestamp if cloud_available else 0.0, radar_rect.size)
+        if lidar_key != self._lidar_key:
+            self._lidar_surface = self._build_lidar_surface(radar_rect.size, points if cloud_available else None)
+            self._lidar_key = lidar_key
+        if self._lidar_surface is not None:
+            self.screen.blit(self._lidar_surface, radar_rect)
+
+        legend_y = radar_rect.bottom + 2
+        for index, (label, color) in enumerate((("LOW", (90, 166, 255)), ("MID", (76, 227, 191)), ("HIGH", (255, 174, 90)))):
+            legend_x = panel.x + 16 + index * max(53, (panel.w - 32) // 3)
+            pygame.draw.circle(self.screen, color, (legend_x + 3, legend_y + 7), 3)
+            self._text(label, (legend_x + 10, legend_y), self.tiny, (151, 177, 187))
+
+        mirror_y = legend_y + 20
+        self._text("REAR CAMERA", (panel.x + 12, mirror_y), self.tiny, (185, 205, 212))
+        mirror_rect = pygame.Rect(panel.x + 12, mirror_y + 18, panel.w - 24, 48)
+        pygame.draw.rect(self.screen, (3, 8, 12), mirror_rect, border_radius=5)
+        mirror = self._camera_surface(mirror_frame, mirror=True, allow_stale=paused)
+        if mirror is not None:
+            mirror_key = (mirror_frame[1], mirror_rect.size)
+            if mirror_key != self._mirror_scaled_key:
+                self._mirror_scaled = pygame.transform.scale(mirror, mirror_rect.size)
+                self._mirror_scaled_key = mirror_key
+            self.screen.blit(self._mirror_scaled, mirror_rect)
+        else:
+            self._text("NO REAR SIGNAL", mirror_rect.center, self.tiny, (128, 153, 162), centered=True)
+        pygame.draw.rect(self.screen, (43, 64, 75), mirror_rect, width=1, border_radius=5)
+
+        range_y = mirror_rect.bottom + 16
+        self._text("PROXIMITY", (panel.x + 12, range_y), self.small, (207, 224, 229))
+        self._text("FWD  ·  REAR  ·  LEFT  ·  RIGHT", (panel.x + 12, range_y + 19), self.tiny, (115, 146, 160))
+        distances, sources = self._directional_ranges(lidar_frame, snapshot.rear_distance, lidar_live)
+        for index, label in enumerate(("FRONT", "REAR", "LEFT", "RIGHT")):
+            y = range_y + 42 + index * 39
+            self._draw_range_row(pygame.Rect(panel.x + 10, y, panel.w - 20, 33), label, distances[label], sources[label])
+
+    def _directional_ranges(self, lidar_frame, rear_distance, lidar_live: bool):
+        points, _ = lidar_frame
+        values: dict[str, float | None] = {"FRONT": None, "REAR": None, "LEFT": None, "RIGHT": None}
+        sources = {label: lidar_live for label in values}
+        if lidar_live and points is not None and len(points):
+            finite = np.isfinite(points[:, :3]).all(axis=1)
+            distance = np.hypot(points[:, 0], points[:, 1])
+            useful = finite & (distance > 0.8) & (distance <= self.config.lidar.display_range_m) & (points[:, 2] > -1.2) & (points[:, 2] < 2.8)
+            if points.shape[1] > 3:
+                useful &= points[:, 3] <= self.config.lidar.persistence_seconds
+            x, y = points[:, 0], points[:, 1]
+            sectors = {
+                "FRONT": useful & (x > 0.0) & (x >= np.abs(y)),
+                "REAR": useful & (x < 0.0) & (-x >= np.abs(y)),
+                "LEFT": useful & (y < 0.0) & (-y > np.abs(x)),
+                "RIGHT": useful & (y > 0.0) & (y >= np.abs(x)),
+            }
+            for label, mask in sectors.items():
+                if np.any(mask):
+                    values[label] = float(np.min(distance[mask]))
+        rear = rear_distance.closest_m
+        if rear is not None:
+            values["REAR"] = rear
+            sources["REAR"] = True
+        return values, sources
+
+    def _draw_range_row(self, rect: pygame.Rect, label: str, distance: float | None, has_signal: bool) -> None:
+        self._panel(rect)
+        label_font = self.tiny
+        self._text(label, (rect.x + 7, rect.y + 10), label_font, (157, 182, 192))
+        if distance is None:
+            value = "CLEAR" if has_signal else "NO DATA"
+            color = (78, 204, 155) if has_signal else (111, 137, 148)
+            fill = 0.0
+        else:
+            value = f"{distance:.1f}m"
+            color = (245, 111, 104) if distance < 2.0 else (246, 184, 100) if distance < 6.0 else (82, 216, 163)
+            fill = max(0.0, min(1.0, 1.0 - distance / self.config.lidar.display_range_m))
+        value_surface = self.tiny.render(value, True, color)
+        self.screen.blit(value_surface, value_surface.get_rect(right=rect.right - 7, centery=rect.centery - 3))
+        track = pygame.Rect(rect.x + 7, rect.bottom - 7, rect.w - 14, 3)
+        pygame.draw.rect(self.screen, (33, 51, 62), track, border_radius=2)
+        if fill > 0.0:
+            pygame.draw.rect(self.screen, color, (track.x, track.y, max(2, int(track.w * fill)), track.h), border_radius=2)
+
+    def _draw_ai_sidebar(self, panel: pygame.Rect, result: PerceptionFrame | None, status: str) -> None:
+        self._panel(panel)
+        self._text("YOLOPv2 OUTPUT", (panel.x + 12, panel.y + 10), self.font, (223, 238, 242))
+        if status == "LIVE":
+            state_label, status_color = "LIVE", (78, 216, 165)
+        elif status == "DISABLED" or status.startswith("MODEL UNAVAILABLE"):
+            state_label, status_color = ("OFF", (145, 162, 171)) if status == "DISABLED" else ("ERROR", (243, 146, 120))
+        elif status.startswith("INFERENCE ERROR"):
+            state_label, status_color = "ERROR", (243, 146, 120)
+        elif status.startswith("STALE"):
+            state_label, status_color = "STALE", (243, 181, 103)
+        else:
+            state_label, status_color = "LOAD", (243, 181, 103)
+        state_rect = pygame.Rect(panel.right - 61, panel.y + 10, 49, 21)
+        pygame.draw.rect(self.screen, (18, 43, 47), state_rect, border_radius=8)
+        self._text(state_label, state_rect.center, self.tiny, status_color, centered=True)
+        inference_hz = 1.0 / self.config.perception.inference_interval_seconds
+        self._text(f"ROOF CAMERA  ·  {self.config.perception.input_size} PX  ·  {inference_hz:.0f} HZ", (panel.x + 12, panel.y + 32), self.tiny, (123, 153, 166))
+
+        preview = pygame.Rect(panel.x + 11, panel.y + 53, panel.w - 22, int((panel.w - 22) * 9 / 16))
+        pygame.draw.rect(self.screen, (2, 6, 9), preview, border_radius=5)
+        if result is not None:
+            previous_clip = self.screen.get_clip()
+            self.screen.set_clip(preview)
+            self._draw_masks_and_boxes(result, preview, draw_labels=False)
+            self.screen.set_clip(previous_clip)
+        else:
+            self._text("WAITING FOR MODEL", preview.center, self.tiny, (127, 154, 164), centered=True)
+        pygame.draw.rect(self.screen, (43, 64, 75), preview, width=1, border_radius=5)
+
+        metrics_y = preview.bottom + 9
+        metric_width = (panel.w - 34) // 3
+        metrics = (("OBJECTS", str(len(result.detections)) if result else "--", (91, 218, 183)),
+                   ("ROAD", self._mask_percent(result.driving_area, 0.5) if result else "--", (82, 200, 167)),
+                   ("LANES", self._mask_percent(result.lane_lines, 0.45) if result else "--", (246, 207, 93)))
+        for index, (label, value, color) in enumerate(metrics):
+            card = pygame.Rect(panel.x + 11 + index * (metric_width + 6), metrics_y, metric_width, 43)
+            self._panel(card)
+            self._text(label, (card.x + 5, card.y + 6), self.tiny, (123, 152, 164))
+            self._text(value, (card.x + 5, card.y + 22), self.small, color)
+
+        output_y = metrics_y + 52
+        self._text("MODEL OUTPUTS", (panel.x + 12, output_y), self.tiny, (157, 184, 193))
+        self._text("OBJECT DETECTION", (panel.x + 12, output_y + 17), self.tiny, (91, 198, 205))
+        self._text("DRIVING-AREA MASK", (panel.x + 12, output_y + 33), self.tiny, (82, 200, 167))
+        self._text("LANE-LINE MASK", (panel.x + 12, output_y + 49), self.tiny, (246, 207, 93))
+        detections_y = output_y + 64
+        pygame.draw.line(self.screen, (40, 63, 75), (panel.x + 12, detections_y), (panel.right - 12, detections_y), 1)
+        detections_y += 9
+        count = len(result.detections) if result else 0
+        self._text(f"OBJECT DETECTIONS  ·  {count}", (panel.x + 12, detections_y), self.tiny, (204, 222, 227))
+        detections_y += 21
+        available_rows = max(0, (panel.bottom - 34 - detections_y) // 18)
+        if result is None:
+            self._text("No inference frame yet", (panel.x + 12, detections_y), self.tiny, (114, 141, 153))
+        elif not result.detections:
+            self._text("No objects detected", (panel.x + 12, detections_y), self.tiny, (114, 141, 153))
+        else:
+            shown = min(count, max(0, available_rows - 1))
+            for index, detection in enumerate(result.detections[:shown]):
+                y = detections_y + index * 18
+                color = self._detection_color(detection.class_id)
+                pygame.draw.circle(self.screen, color, (panel.x + 16, y + 7), 3)
+                self._text(detection.class_name[:18], (panel.x + 25, y), self.tiny, (192, 211, 217))
+                confidence = f"{detection.confidence:.2f}"
+                confidence_surface = self.tiny.render(confidence, True, color)
+                self.screen.blit(confidence_surface, confidence_surface.get_rect(right=panel.right - 12, top=y))
+            remaining = count - shown
+            if remaining > 0 and available_rows > 0:
+                self._text(f"+ {remaining} more · boxes shown above", (panel.x + 12, detections_y + shown * 18), self.tiny, (133, 161, 171))
+        if result is not None:
+            timing_y = panel.bottom - 21
+            self._text(f"INFERENCE  {result.inference_ms:.0f} MS", (panel.x + 12, timing_y), self.tiny, (115, 149, 161))
+
+    @staticmethod
+    def _mask_percent(mask: np.ndarray, threshold: float) -> str:
+        percent = float(np.count_nonzero(mask >= threshold)) * 100.0 / mask.size
+        return f"{percent:.0f}%"
+
+    @staticmethod
+    def _detection_color(class_id: int) -> tuple[int, int, int]:
+        palette = ((80, 220, 255), (255, 180, 68), (255, 91, 86), (100, 236, 149), (189, 139, 255), (255, 220, 92), (85, 171, 255), (255, 119, 190))
+        return palette[class_id % len(palette)]
+
+    def _draw_footer(self, width: int, height: int, snapshot: DrivingSnapshot, controller_name: str, status: str, paused: bool) -> None:
+        panel = pygame.Rect(16, height - 65, width - 32, 52)
+        self._panel(panel)
+        vehicle = snapshot.vehicle
+        self._text(f"{vehicle.speed_kmh:05.1f}", (panel.x + 12, panel.y + 6), self.speed_font, (242, 249, 250))
+        self._text("km/h", (panel.x + 119, panel.y + 23), self.tiny, (135, 169, 181))
+        gear_rect = pygame.Rect(panel.x + 158, panel.y + 11, 34, 30)
+        pygame.draw.rect(self.screen, (17, 48, 53), gear_rect, border_radius=8)
+        self._text(vehicle.gear, gear_rect.center, self.font, (98, 221, 190) if not vehicle.reverse else (246, 177, 101), centered=True)
+
+        controls_x = panel.x + 211
+        bar_width = min(138, max(80, int(width * 0.108)))
+        self._bar(controls_x, panel.y + 16, "THR", vehicle.throttle, (75, 202, 166), bar_width)
+        self._bar(controls_x, panel.y + 36, "BRK", vehicle.brake, (231, 114, 105), bar_width)
+        steering_x = controls_x + bar_width + 22
+        track = pygame.Rect(steering_x + 43, panel.y + 24, 74, 6)
+        pygame.draw.rect(self.screen, (39, 59, 70), track, border_radius=3)
+        pygame.draw.line(self.screen, (86, 113, 125), (track.centerx, track.y - 3), (track.centerx, track.bottom + 3), 1)
+        marker = track.centerx + int(max(-1.0, min(1.0, vehicle.steering)) * (track.w // 2))
+        pygame.draw.circle(self.screen, (93, 211, 210), (marker, track.centery), 5)
+        self._text("STEER", (steering_x, panel.y + 18), self.tiny, (143, 171, 182))
+
+        right_x = panel.right - 320
+        label = status[:32] if status else ""
+        self._text(label or ("PAUSED" if paused else f"INPUT  {controller_name[:16].upper()}"), (right_x, panel.y + 10), self.tiny, (245, 187, 104) if status or paused else (114, 200, 178))
+        self._text("WASD DRIVE  ·  C / Q CAMERA  ·  ESC MENU", (right_x, panel.y + 30), self.tiny, (129, 157, 168))
+
+    def _draw_masks_and_boxes(self, result: PerceptionFrame, viewport: pygame.Rect, draw_labels: bool = True) -> None:
         source_size = (result.source_width, result.source_height)
         scale = min(viewport.width / source_size[0], viewport.height / source_size[1])
         draw_width = max(1, int(source_size[0] * scale))
@@ -126,10 +371,6 @@ class Dashboard:
         if self._perception_scaled is not None:
             self.screen.blit(self._perception_scaled, draw_rect)
 
-        palette = (
-            (80, 220, 255), (255, 180, 68), (255, 91, 86), (100, 236, 149),
-            (189, 139, 255), (255, 220, 92), (85, 171, 255), (255, 119, 190),
-        )
         scale_x = draw_width / result.source_width
         scale_y = draw_height / result.source_height
         for detection in result.detections:
@@ -140,8 +381,10 @@ class Dashboard:
                 max(1, int((x2 - x1) * scale_x)),
                 max(1, int((y2 - y1) * scale_y)),
             )
-            color = palette[detection.class_id % len(palette)]
-            pygame.draw.rect(self.screen, color, box, width=2)
+            color = self._detection_color(detection.class_id)
+            pygame.draw.rect(self.screen, color, box, width=2 if draw_labels else 1)
+            if not draw_labels:
+                continue
             label = f"{detection.class_name} {detection.confidence:.2f}"
             text = self.small.render(label, True, (245, 249, 250))
             label_y = max(draw_rect.y, box.y - text.get_height() - 3)
@@ -149,25 +392,6 @@ class Dashboard:
             label_rect = pygame.Rect(label_x, label_y, text.get_width() + 8, text.get_height() + 4)
             pygame.draw.rect(self.screen, (7, 14, 17), label_rect)
             self.screen.blit(text, (label_rect.x + 4, label_rect.y + 2))
-
-    def _draw_perception_summary(self, width: int, height: int, result: PerceptionFrame | None) -> None:
-        x = width - 328
-        y = 344
-        panel = pygame.Rect(x, y, 306, height - y - 18)
-        pygame.draw.rect(self.screen, (5, 12, 16), panel, border_radius=10)
-        pygame.draw.rect(self.screen, (42, 67, 76), panel, width=1, border_radius=10)
-        self._text("MODEL OUTPUTS", (x + 14, y + 12), self.font, (213, 230, 234))
-        self._text("770  OBJECT DETECTIONS", (x + 14, y + 48), self.small, (96, 218, 182))
-        self._text("677  DRIVING-AREA MASK", (x + 14, y + 76), self.small, (96, 218, 182))
-        self._text("769  LANE-LINE MASK", (x + 14, y + 104), self.small, (246, 212, 99))
-        if result is not None:
-            road_percent = float(np.count_nonzero(result.driving_area >= 0.5)) * 100.0 / result.driving_area.size
-            lane_percent = float(np.count_nonzero(result.lane_lines >= 0.45)) * 100.0 / result.lane_lines.size
-            self._text(f"DETECTIONS  {len(result.detections)}", (x + 14, y + 150), self.small, (219, 231, 233))
-            self._text(f"ROAD PIXELS  {road_percent:.1f}%", (x + 14, y + 177), self.small, (219, 231, 233))
-            self._text(f"LANE PIXELS  {lane_percent:.1f}%", (x + 14, y + 204), self.small, (219, 231, 233))
-            self._text("ROAD AREA", (x + 14, y + 244), self.lidar_small, (0, 155, 127))
-            self._text("LANE LINES", (x + 128, y + 244), self.lidar_small, (246, 212, 99))
 
     def _camera_surface(self, frame, mirror: bool, allow_stale: bool = False) -> pygame.Surface | None:
         image, timestamp = frame
@@ -183,93 +407,6 @@ class Dashboard:
             self._main_surface = pygame.surfarray.make_surface(np.swapaxes(image, 0, 1))
             self._main_key = timestamp
         return self._main_surface
-
-    def _draw_edge_shade(self, width: int, height: int) -> None:
-        size = (width, height)
-        if self._edge_shade_size != size:
-            self._edge_shade = pygame.Surface(size, pygame.SRCALPHA)
-            pygame.draw.rect(self._edge_shade, (2, 8, 15, 26), (0, 0, width, 104))
-            pygame.draw.rect(self._edge_shade, (2, 8, 15, 42), (0, height - 176, width, 176))
-            self._edge_shade_size = size
-        self.screen.blit(self._edge_shade, (0, 0))
-
-    def _draw_status(self, width: int, status: str, paused: bool) -> None:
-        badge = pygame.Rect(20, 18, 182, 38)
-        pygame.draw.rect(self.screen, (7, 20, 31, 225), badge, border_radius=10)
-        label = "PAUSED" if paused else "CARLA DRIVE  /  MANUAL"
-        color = (255, 194, 105) if paused else (156, 226, 217)
-        self._text(label, (badge.x + 12, badge.y + 11), self.small, color)
-        if status:
-            self._text(status, (20, 64), self.small, (250, 201, 139))
-        self._text("1 Cockpit    2 Chase    3 Overhead", (20, 92), self.small, (198, 212, 220))
-
-    def _draw_mirror(self, width: int, frame, paused: bool) -> None:
-        target_width = min(int(width * 0.29), 380)
-        target_height = int(target_width * 0.285)
-        x = (width - target_width) // 2
-        y = 16
-        outer = pygame.Rect(x - 8, y - 8, target_width + 16, target_height + 16)
-        pygame.draw.rect(self.screen, (8, 14, 21), outer, border_radius=12)
-        pygame.draw.rect(self.screen, (144, 169, 179), outer, width=2, border_radius=12)
-        surface = self._camera_surface(frame, mirror=True, allow_stale=paused)
-        inner = pygame.Rect(x, y, target_width, target_height)
-        if surface is not None:
-            cache_key = (frame[1], inner.size)
-            if cache_key != self._mirror_scaled_key:
-                self._mirror_scaled = pygame.transform.scale(surface, inner.size)
-                self._mirror_scaled_key = cache_key
-            self.screen.blit(self._mirror_scaled, inner)
-        else:
-            pygame.draw.rect(self.screen, (16, 28, 37), inner, border_radius=5)
-            self._text("REAR VIEW", inner.center, self.small, (117, 145, 157), centered=True)
-        self._text("REAR VIEW", (outer.x + 8, outer.bottom + 3), self.small, (178, 197, 205))
-
-    def _draw_lidar(self, width: int, frame, paused: bool) -> None:
-        points, timestamp = frame
-        if timestamp <= 0.0:
-            points = None
-        panel_width, panel_height = 320, 310
-        x, y = width - panel_width - 20, 20
-        panel = pygame.Rect(x, y, panel_width, panel_height)
-        pygame.draw.rect(self.screen, (7, 17, 27), panel, border_radius=12)
-        pygame.draw.rect(self.screen, (64, 91, 108), panel, width=1, border_radius=12)
-        self._text("360°  LIDAR", (x + 14, y + 9), self.font, (225, 239, 243))
-        self._text(
-            f"HEIGHT COLOR  /  TOP VIEW  /  {self.config.lidar.display_range_m:.0f} M",
-            (x + 14, y + 31),
-            self.lidar_small,
-            (132, 163, 177),
-        )
-        if not self.config.lidar.enabled:
-            state, state_color = "OFF", (145, 159, 167)
-        elif points is None:
-            state, state_color = "NO DATA", (237, 168, 112)
-        elif paused:
-            state, state_color = "HOLD", (246, 194, 107)
-        elif time.monotonic() - timestamp > 1.5:
-            state, state_color = "STALE", (237, 168, 112)
-        else:
-            state, state_color = "LIVE", (87, 214, 163)
-        state_rect = pygame.Rect(panel.right - 77, y + 10, 63, 23)
-        pygame.draw.rect(self.screen, (22, 49, 48), state_rect, border_radius=8)
-        self._text(state, state_rect.center, self.lidar_small, state_color, centered=True)
-
-        canvas_rect = pygame.Rect(x + 12, y + 54, panel_width - 24, 220)
-        if self._lidar_key != (timestamp if points is not None else 0.0):
-            self._lidar_surface = self._build_lidar_surface(canvas_rect.size, points)
-            self._lidar_key = timestamp if points is not None else 0.0
-        if self._lidar_surface:
-            self.screen.blit(self._lidar_surface, canvas_rect)
-        if points is None:
-            message = "SENSOR DISABLED" if not self.config.lidar.enabled else "WAITING FOR RETURNS"
-            self._text(message, canvas_rect.center, self.lidar_small, (145, 168, 178), centered=True)
-
-        legend_y = y + 288
-        legend = (("LOW", (90, 166, 255)), ("MID", (76, 227, 191)), ("HIGH", (255, 174, 90)))
-        for index, (label, color) in enumerate(legend):
-            legend_x = x + 16 + index * 89
-            pygame.draw.circle(self.screen, color, (legend_x + 4, legend_y + 6), 3)
-            self._text(label, (legend_x + 12, legend_y), self.lidar_small, (157, 181, 191))
 
     def _build_lidar_surface(self, size: tuple[int, int], points: np.ndarray | None) -> pygame.Surface:
         surface = pygame.Surface(size, pygame.SRCALPHA)
@@ -353,56 +490,6 @@ class Dashboard:
         pygame.draw.polygon(surface, (221, 242, 240), vehicle, 1)
         pygame.draw.line(surface, (221, 242, 240), (center[0] - 2, center[1] + 1), (center[0] + 2, center[1] + 1), 1)
         return surface
-
-    def _draw_parking_bar(self, width: int, snapshot: DrivingSnapshot) -> None:
-        if not snapshot.vehicle.reverse:
-            return
-        center_x = width // 2
-        y = 156
-        bar_width = min(340, int(width * 0.30))
-        half = bar_width // 2
-        distance = snapshot.rear_distance.closest_m
-        left_fill, right_fill = parking_side_fills(snapshot.rear_distance, self.config.rear_parking.distance_m)
-        panel = pygame.Rect(center_x - half - 12, y - 8, bar_width + 24, 42)
-        pygame.draw.rect(self.screen, (7, 16, 24), panel, border_radius=11)
-        pygame.draw.rect(self.screen, (63, 83, 96), panel, width=1, border_radius=11)
-        track_y = y + 15
-        pygame.draw.line(self.screen, (56, 77, 89), (center_x - half, track_y), (center_x + half, track_y), 8)
-        if distance is not None:
-            danger = max(0.0, min(1.0, 1.0 - distance / self.config.rear_parking.warning_distance_m))
-            color = (int(70 + 185 * danger), int(205 - 165 * danger), int(85 - 40 * danger))
-            if left_fill:
-                amount = max(3, int(half * left_fill))
-                pygame.draw.line(self.screen, color, (center_x - amount, track_y), (center_x, track_y), 8)
-            if right_fill:
-                amount = max(3, int(half * right_fill))
-                pygame.draw.line(self.screen, color, (center_x, track_y), (center_x + amount, track_y), 8)
-        pygame.draw.line(self.screen, (218, 231, 235), (center_x, track_y - 12), (center_x, track_y + 12), 2)
-        label = "NO TARGET" if distance is None else f"{distance:.1f} m"
-        self._text(label, (center_x, panel.bottom + 5), self.small, (220, 231, 234), centered=True)
-
-    def _draw_telemetry(self, width: int, height: int, snapshot: DrivingSnapshot, controller_name: str) -> None:
-        vehicle = snapshot.vehicle
-        speed_box = pygame.Rect(22, height - 142, 260, 116)
-        self._panel(speed_box)
-        self._text(f"{vehicle.speed_kmh:05.1f}", (speed_box.x + 18, speed_box.y + 15), self.speed_font, (245, 250, 252))
-        self._text("km/h", (speed_box.x + 154, speed_box.y + 42), self.font, (142, 176, 190))
-        gear_color = (251, 180, 96) if vehicle.reverse else (108, 222, 196)
-        self._text(vehicle.gear, (speed_box.right - 47, speed_box.y + 29), self.gear_font, gear_color)
-        self._text(f"CAMERA  {snapshot.camera_mode.value.upper()}", (speed_box.x + 18, speed_box.bottom - 22), self.small, (167, 190, 200))
-
-        panel = pygame.Rect(width - 328, height - 142, 306, 116)
-        self._panel(panel)
-        self._text(f"CONTROLS  /  {controller_name[:18]}", (panel.x + 14, panel.y + 11), self.small, (175, 201, 211))
-        self._bar(panel.x + 14, panel.y + 42, "THR", vehicle.throttle, (75, 202, 166), panel.w - 28)
-        self._bar(panel.x + 14, panel.y + 66, "BRK", vehicle.brake, (231, 114, 105), panel.w - 28)
-        steer_x = panel.x + 14
-        steer_y = panel.y + 94
-        track = pygame.Rect(steer_x + 47, steer_y, panel.w - 65, 6)
-        pygame.draw.rect(self.screen, (42, 61, 73), track, border_radius=3)
-        marker = track.centerx + int(vehicle.steering * (track.w // 2))
-        pygame.draw.circle(self.screen, (100, 206, 219), (marker, track.centery), 5)
-        self._text("STEER", (steer_x, steer_y - 6), self.small, (158, 181, 191))
 
     def _panel(self, rect: pygame.Rect) -> None:
         pygame.draw.rect(self.screen, (7, 18, 28), rect, border_radius=14)

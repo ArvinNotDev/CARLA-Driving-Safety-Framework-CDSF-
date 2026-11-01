@@ -91,8 +91,8 @@ class PerceptionConfig:
     camera_y: float = 0.0
     camera_z: float = 1.8
     camera_pitch: float = -3.0
-    sensor_tick_seconds: float = 1.0
-    inference_interval_seconds: float = 1.0
+    sensor_tick_seconds: float = 0.5
+    inference_interval_seconds: float = 0.5
 
 
 @dataclass(frozen=True)

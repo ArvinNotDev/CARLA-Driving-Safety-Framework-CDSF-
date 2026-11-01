@@ -8,6 +8,7 @@ import pygame
 
 from carla_drive.config import ControllerConfig
 from carla_drive.input.preferences import save_controller_preferences
+from carla_drive.ui.events import get_events
 
 
 SLIDERS = (
@@ -107,7 +108,7 @@ class ControllerSettings:
         pygame.display.set_caption("CARLA Drive | Controller Settings")
         while True:
             self.clock.tick(60)
-            for event in pygame.event.get():
+            for event in get_events():
                 if event.type == pygame.QUIT:
                     self.quit_requested = True
                     return None

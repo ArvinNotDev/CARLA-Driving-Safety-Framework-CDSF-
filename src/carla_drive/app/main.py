@@ -25,6 +25,7 @@ from carla_drive.sensors.monitor import MonitorSensors
 from carla_drive.safety.kinematic_collision import KinematicCollisionDetector, is_reportable_collision
 from carla_drive.ui.audio import ReverseBeep
 from carla_drive.ui.dashboard import Dashboard
+from carla_drive.ui.events import get_events
 from carla_drive.ui.controller_settings import ControllerSettings
 from carla_drive.ui.launcher import Launcher
 from carla_drive.ui.pause_menu import PauseMenu
@@ -180,7 +181,7 @@ def _connect_with_retry(screen: pygame.Surface, config: AppConfig) -> CarlaSessi
 
     start_attempt()
     while True:
-        for event in pygame.event.get():
+        for event in get_events():
             if event.type == pygame.QUIT:
                 with state_lock:
                     cancelled = True
@@ -258,12 +259,11 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
     status = ""
     status_until = 0.0
     control = None
-    perception_view = config.perception.enabled
     next_tick_at = time.monotonic()
     step_seconds = config.carla.fixed_delta_seconds
 
     while True:
-        events = pygame.event.get()
+        events = get_events()
         for event in events:
             if event.type == pygame.QUIT:
                 return "quit"
@@ -288,10 +288,6 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
                     camera.set_mode(CameraMode.CHASE)
                 elif event.key == pygame.K_3:
                     camera.set_mode(CameraMode.OVERHEAD)
-                elif event.key == pygame.K_v:
-                    perception_view = not perception_view
-                    status = "YOLOPv2 output view" if perception_view else "Driving camera view"
-                    status_until = time.monotonic() + 1.5
 
         control = controller.sample(events)
         if "open_settings" in control.pressed:
@@ -421,7 +417,6 @@ def run_driving_loop(session, controller, camera, sensors, dashboard, reverse_be
             paused,
             status,
             perception_state=perception.latest() if perception is not None else (None, "DISABLED"),
-            perception_view=perception_view,
         )
         pygame.display.flip()
         clock.tick(config.window.render_fps)
@@ -439,7 +434,7 @@ def run_controller_diagnostic(config: AppConfig) -> int:
     running = True
     try:
         while running:
-            events = pygame.event.get()
+            events = get_events()
             for event in events:
                 if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                     running = False

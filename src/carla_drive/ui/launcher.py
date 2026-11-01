@@ -9,6 +9,7 @@ import pygame
 
 from carla_drive.carla.session import VehicleOption, friendly_map_name
 from carla_drive.config import ControllerConfig, SessionConfig
+from carla_drive.ui.events import get_events
 from carla_drive.ui.controller_settings import ControllerSettings
 
 TIME_OF_DAY_OPTIONS = ("Dawn", "Morning", "Noon", "Afternoon", "Sunset", "Night")
@@ -99,7 +100,7 @@ class Launcher:
         pygame.display.flip()
         while True:
             self.clock.tick(60)
-            for event in pygame.event.get():
+            for event in get_events():
                 if event.type == pygame.QUIT:
                     return None
                 if event.type == pygame.KEYDOWN:

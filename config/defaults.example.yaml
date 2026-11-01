@@ -69,8 +69,8 @@ perception:
   camera_y: 0.0
   camera_z: 1.8
   camera_pitch: -3.0
-  sensor_tick_seconds: 1.0
-  inference_interval_seconds: 1.0
+  sensor_tick_seconds: 0.5
+  inference_interval_seconds: 0.5
 
 rear_parking:
   enabled: true

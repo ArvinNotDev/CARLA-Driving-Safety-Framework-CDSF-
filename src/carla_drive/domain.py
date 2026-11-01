@@ -51,4 +51,4 @@ class RearDistanceState:
 class DrivingSnapshot:
     vehicle: VehicleSnapshot = field(default_factory=VehicleSnapshot)
     rear_distance: RearDistanceState = field(default_factory=RearDistanceState)
-    camera_mode: CameraMode = CameraMode.CHASE
+    camera_mode: CameraMode = CameraMode.COCKPIT

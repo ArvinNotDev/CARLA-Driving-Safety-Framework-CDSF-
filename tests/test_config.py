@@ -22,6 +22,8 @@ def test_default_configuration_loads_and_validates():
     assert config.controller.dpad_hat == 0
     assert config.controller.steering_sensitivity == 1.0
     assert config.controller.dpad_mode == "auto"
+    assert config.perception.sensor_tick_seconds == 0.5
+    assert config.perception.inference_interval_seconds == 0.5
 
 
 def test_configuration_rejects_unknown_settings(tmp_path):

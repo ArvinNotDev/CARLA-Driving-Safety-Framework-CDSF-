@@ -51,7 +51,7 @@ class CameraRig:
             raise RuntimeError("Spawn the ego vehicle before creating its camera rig.")
         self.config = config
         self.session = session
-        self.mode = CameraMode.CHASE
+        self.mode = CameraMode.COCKPIT
         self.transforms = {
             CameraMode.COCKPIT: carla.Transform(
                 carla.Location(x=config.cockpit_x, y=config.cockpit_y, z=config.cockpit_z),

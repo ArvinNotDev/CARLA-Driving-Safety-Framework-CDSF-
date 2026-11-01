@@ -6,6 +6,7 @@ import pygame
 
 from carla_drive.config import ControllerConfig
 from carla_drive.ui.controller_settings import ControllerSettings
+from carla_drive.ui.events import get_events
 
 
 class PauseMenu:
@@ -34,7 +35,7 @@ class PauseMenu:
     def run(self) -> str:
         pygame.display.set_caption("CARLA Drive | Paused")
         while True:
-            for event in pygame.event.get():
+            for event in get_events():
                 if event.type == pygame.QUIT:
                     return "quit"
                 if event.type == pygame.KEYDOWN:
